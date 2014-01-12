@@ -1,0 +1,75 @@
+
+<html>
+<head>
+<link rel="stylesheet" type="text/css" href="style.css" />
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+
+<script>
+	function changeAction() {
+		var hostnameip = document.getElementsByName("dlsname")[0].value;
+		var serviceAlias = document.getElementsByName("dlsalias")[0].value;		
+		var servicepath = document.getElementsByName("dlspath")[0].value;
+		var newurl = "http://" + hostnameip +"/"+ serviceAlias +"/"+ servicepath;
+		document.forms[0].action = newurl;
+	}
+</script>
+
+</head>
+<body>
+
+
+<div id="stylized" class="myform">
+<form id="form" name="form" method="post" onsubmit="return changeAction()" enctype="multipart/form-data">
+<h1>DLS Request Form</h1>
+	<fieldset>
+	<legend><strong>Service Infomation:</strong></legend>
+
+	<label>Host Name:
+	</label>
+		<input type="text" name="dlsname" value = "localhost:8080"/>
+	<label>Host Alias:
+		<span class="small">DLS?</span>
+	</label>
+		<input type="text" name="dlsalias" value = "DirectoryListingService"/>
+	<label>Service Path:
+		<span class="small">no extra '/'</span>
+	</label>
+		<input type="text" name="dlspath" value = "rest/dls/list"/> </br>
+	<label>Remote URI:
+		<span class="small">ftp, gsiftp, sftp</span>
+	</label>
+		<input type="text" name="URI"/><br/>
+	</fieldset>
+
+
+	<fieldset>
+	<legend><strong>Options:</strong></legend>
+	<label for="forceRefresh">Force Refresh    </label> 
+		<input type="checkbox" value="true" name="forceRefresh"/>
+	<label for="enablePrefetch">Enable Prefetch</label> 
+		<input type="checkbox" value="true" name="enablePrefetch"/><br/>
+	</fieldset>
+
+	<fieldset>
+	<legend><strong>Proxy Login:</strong></legend>
+	<label for="proxyserver">Proxy Server:    </label> 
+		<input type="text" name="proxyserver" value = "myproxy.teragrid.org"/><br/>
+	<label for="account">Account Name:    </label> 
+		<input type="text" name="account"/><br/>
+	<label for="passphrase">Pass Phrase:    </label> 
+		<input type="password" name="passphrase"/><br/>
+	<label for="proxy file">Proxy File:    </label> 
+		<input type="file" name="proxyCertificate"/><br/>
+	</fieldset>
+
+
+	<fieldset>
+	<legend><strong>Submit:</strong></legend>
+		<input type="submit" value="Submit"/>
+		<input type="reset" value="Reset">
+	</fieldset>
+</form>
+</div>
+
+</body>	
+</html>
