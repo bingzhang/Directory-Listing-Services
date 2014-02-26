@@ -10,7 +10,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import stork.dls.service.prefetch.DLSThreadsManager;
 import stork.dls.service.prefetch.PrefetchingServices;
 import stork.dls.service.prefetch.WorkerThread;
-import stork.dls.stream.DLSFetchingTask;
+import stork.dls.stream.DLSListingTask;
 import stork.dls.stream.DLSIOAdapter;
 import stork.dls.util.DLSLogTime;
 import stork.dls.util.DLSResult;
@@ -127,7 +127,7 @@ final public class MemoryCache {
 		}
 	}
 	
-	private boolean register(long threadID, DLSFetchingTask fetchingtask){
+	private boolean register(long threadID, DLSListingTask fetchingtask){
 		boolean iRet = false;
 		final String cachekey = fetchingtask.getCachekey();
 		DLSLogTime curNonblocingCachePerformanceTime1 = new DLSLogTime();
@@ -187,7 +187,7 @@ final public class MemoryCache {
 		
 	//public String read(long threadID, String serverName, String pathEntry, URI uri, DLSProxyInfo dlsproxy, 
 			//boolean enablePrefetch, boolean forceRefresh, String proxyCertContent, String token){
-	public String read(long threadID, DLSFetchingTask fetchingtask, String token) throws Exception {
+	public String read(long threadID, DLSListingTask fetchingtask, String token) throws Exception {
 		if(true == fetchingtask.isForceRefresh()){
 			return forceRefresh(threadID, fetchingtask, token);
 		}else{
@@ -202,7 +202,7 @@ final public class MemoryCache {
 		}
 	}
 	
-	private String forceRefresh(long threadID, DLSFetchingTask fetchingtask, String token)throws Exception{
+	private String forceRefresh(long threadID, DLSListingTask fetchingtask, String token)throws Exception{
 		if(cacheTimeMeasureTraceFlag){
 			int i = 0;
 			long inMemoryCache_totaltime = 0;
@@ -297,7 +297,7 @@ final public class MemoryCache {
 		return result;
 	}	
 	
-	private void asynchronizeWrite(long threadID, DLSFetchingTask fetchingtask, String result, String token) throws Exception{	
+	private void asynchronizeWrite(long threadID, DLSListingTask fetchingtask, String result, String token) throws Exception{	
 		String cachekey = fetchingtask.getCachekey();
 		active_counter.increment();
 		if(cacheBehaviorTraceFlag){
@@ -327,7 +327,7 @@ final public class MemoryCache {
 		return;
 	}
 	
-	void prefetch_service(DLSResult dlsresult, DLSFetchingTask fetchingtask, String token) throws Exception{
+	void prefetch_service(DLSResult dlsresult, DLSListingTask fetchingtask, String token) throws Exception{
 		List<String> prefetchSubdirPathLst = dlsresult.getPrefetchSubdirPath();
 		if(0 < prefetchSubdirPathLst.size()){
 			final String prefetchingStartPath = fetchingtask.getFethchingPath();
@@ -348,7 +348,7 @@ final public class MemoryCache {
 		}
 	}
 	
-	private String asynchronizeRead(long threadID, DLSFetchingTask fetchingtask, String token) throws Exception{
+	private String asynchronizeRead(long threadID, DLSListingTask fetchingtask, String token) throws Exception{
 		String result = null;
 		final String serverName = fetchingtask.getServerName();
 		final String pathEntry = fetchingtask.getFethchingPath();

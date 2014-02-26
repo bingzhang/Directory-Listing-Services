@@ -1,21 +1,28 @@
 package stork.dls.stream;
 
+import java.io.IOException;
 import java.net.URI;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedList;
 import java.util.Vector;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import javax.annotation.concurrent.GuardedBy;
 
 import org.globus.ftp.FileInfo;
 
 import stork.dls.client.DLSClient;
+import stork.dls.io.network.DLSFTPMetaChannel;
 import stork.dls.service.prefetch.DLSThreadsManager;
+import stork.dls.service.prefetch.WorkerThread;
 import stork.dls.stream.DLSIOAdapter.FETCH_PREFETCH;
 import stork.dls.util.DLSResult;
 
 /**
+ * stream proxy
  * @author bing
  * @see DLSStreamPool
  */
@@ -24,9 +31,10 @@ public abstract class DLSStream{
 	static final boolean PRINT_TIME = false;//true;//false;
 	public static final int ONE_PIPE_CAPACITY = DLSClient.ONE_PIPE_CAPACITY;
 
-	private final String streamKeyID;
 	DLSProxyInfo proxyinfo;
 	
+	private final String streamKeyID;
+	public final int streamID;
 	protected int 	 port;
 	protected String host;
 	protected String username;
@@ -35,20 +43,102 @@ public abstract class DLSStream{
 	protected String protocol;
 	protected String realprotocol;
 	protected String token = null;
-	protected DLSClient dlsclient;
 	
-	@GuardedBy("DLSStream.dls_StreamPool")
-	public volatile boolean isAvailable = true;
-	public enum FAILURE_STATUS{
-		FAILURE_RETRANSMIT,
-		FAILURE_RECOVERABLE,
-		FAILURE_IGNORABLE
-	};
-	protected FAILURE_STATUS stream_failstatus = FAILURE_STATUS.FAILURE_RECOVERABLE;
-	public int activeStreamIndx = 0;
+	protected DLSFTPMetaChannel localCC;
 	
+	protected final ReadWriteLock spinlock = new ReentrantReadWriteLock();
+	@GuardedBy("DLSStream.spinlock")
+	public int value = 0;	
+
+    public volatile boolean isAvailable = false;   
+    public volatile REINCARNATION_STATUS isReincarnation = REINCARNATION_STATUS.NOT_PROCESSING;
+	
+    public enum REINCARNATION_STATUS{
+        NOT_PROCESSING,
+        PROCESSING
+    }
+    
+    public enum CHANNEL_STATE{
+        DC_IGNORE,//DC, permission, wrong path
+        DC_RETRANSMIT,//DC,migration
+        DC_SUCCESS, // successful
+        CC_REVIVE,//CC recreate
+        CC_BENIGN
+    };
+    
+    
+    
 	public String getStreamKey(){
 		return this.streamKeyID;
+	}
+	
+	public ReadWriteLock getspinlock(){
+	    return this.spinlock;
+	}
+	
+	public boolean increaseValue(){
+        if(false == isAvailable){
+            return false;
+        }
+        if(spinlock.readLock().tryLock()){
+            try{
+                this.value++;
+            }finally{
+                spinlock.readLock().unlock();    
+            }
+            return true;
+        }else{
+            return false;
+        }
+	}
+	
+	/**
+	 * reserveValue using spinlock.readlock
+	 * since it is only invoked in uniquely synchronized streampool,
+	 * so read concurrency can not happen on it.
+	 * @return
+	 */
+	public boolean reserveValue(){
+        if(false == isAvailable){
+            return false;
+        }
+        if(spinlock.readLock().tryLock()){
+            try{
+                this.value--;
+            }finally{
+                spinlock.readLock().unlock();    
+            }
+            return true;
+        }else{
+            return false;
+        }
+	}
+	
+	/**
+	 *  isAvailable is important. any time-consuming operation within CRITICALSECTION
+	 *  must set isAvailable is false first.
+	 *  
+	 *  StreamPool getAvailableStream will keep on reading the status of volatile "isAvailable"
+	 *  somewhere will write it.
+	 *  
+	 * @return
+	 */
+	public int getValue(){
+	    
+        if(false == isAvailable){
+            return 0;
+        }
+        if(spinlock.readLock().tryLock()){
+            int val;
+            try{
+                val = this.value;
+            }finally{
+                spinlock.readLock().unlock();    
+            }
+            return val;
+        }else{
+            return 0;
+        }
 	}
 	
 	final static class logTime{
@@ -63,15 +153,19 @@ public abstract class DLSStream{
 	
 	boolean persistent_multi_Streams = false;//true
 	
-	protected DLSStream(boolean TwoD, String streamKey){
-		dls_StreamPool = new DLSStreamPool(TwoD);
+	protected DLSStream(String streamKey){
+	    this.streamID = -1;
+	    this.streamKeyID = streamKey;
+	    dls_StreamPool = new DLSStreamPool();
+	}  /**
+     * dummy stream
+     * @param streamKey
+     */protected DLSStream(int id, String streamKey){
+	    this.streamID = id;
+	    dls_StreamPool = null;
 		this.streamKeyID = streamKey;
 	}
-	
-	protected DLSStream(boolean TwoD, String streamKey, boolean flag){
-		dls_StreamPool = null;
-		this.streamKeyID = streamKey;
-	}
+
 	public String get_realprotocol(){
 		return dls_StreamPool.get_realprotocol();
 	}
@@ -89,13 +183,13 @@ public abstract class DLSStream{
 		return activeStream;
 	}
 	
-	final public DLSStream MigrationStream(String assignedThreadName, String path, DLSStream deadStream, int activeIndx){
-		DLSStream newStream = null;
-		newStream = deadStream;
-		if(null != newStream){
-			return dls_StreamPool.MigrationStream(assignedThreadName, path, newStream, activeIndx);
+	final public DLSStream MigrationStream(DLSListingTask listingtask, String assignedThreadName, String path, DLSStream deadStream, int activeIndx){
+		if(null != deadStream){
+			return dls_StreamPool.MigrationStream(listingtask, assignedThreadName, path, deadStream, activeIndx);
+		}else{
+		    System.out.println("MigrationStream deadStream is null");
+		    return null;
 		}
-		return newStream;
 	}
 	
 	final public void releaseThisStream(DLSStream thisStream, String assignedThreadName, String path, int activeIndx){
@@ -104,20 +198,17 @@ public abstract class DLSStream{
 	
 	abstract public void fillStreamPool(String streamKey);
 	protected DLSClient createClient(){
-		return null;
+	    return new DLSClient(this);
 	}
-	public void setClient(DLSClient client) {
-		if(null != client && null != dlsclient){
-			dlsclient.close();
-		}
-		dlsclient = client;
-	}
-	final public void initStreamPool(final URI uri, final DLSProxyInfo dlsproxy, 
-			final String proxyCertContent2, 
+	
+	final public void initStreamPool(final DLSListingTask listingtask,
 			final String token) throws Exception{
 		if(persistent_multi_Streams){
 			return;
 		}else{
+		    final URI uri = listingtask.getUri();
+		    final DLSProxyInfo dlsproxy = listingtask.getDlsproxy();
+		    final String proxyCertContent2 = listingtask.getProxy();
 			final String host2 = uri.getHost();
 			final int port2 = uri.getPort(); 
 			final String username2;
@@ -140,9 +231,9 @@ public abstract class DLSStream{
 			dls_StreamPool.setName(this.streamKeyID);
 			fillStreamPool(this.streamKeyID);
 			String realProtocol = null;
-			final int STRIDE = dls_StreamPool.STRIDE;
+
 			for(int i = 0; i < DLSStreamPool.NUM_CONCURRENCY_STREAM; i ++){
-				DLSStream oDls = dls_StreamPool.streamList.get(i*STRIDE);
+				DLSStream oDls = dls_StreamPool.streamList.get(i);
 				oDls.protocol = protocol2;
 				int port = port2;
 				if (port2 == -1){
@@ -151,13 +242,12 @@ public abstract class DLSStream{
 				}				
 				oDls.setInfo(host2, port, username2, password2, realProtocol, proxyCertContent2, token, dlsproxy);
 			}
-			int indx = 0;
 			String threadGroupID = "pre-Authenticate initStreamPool";
 			ArrayList<Thread> threadList = new ArrayList<Thread>(DLSStreamPool.NUM_CONCURRENCY_STREAM);
+			//concurrent authenticate streams
 			for(int i = 0; i < DLSStreamPool.NUM_CONCURRENCY_STREAM; i ++){
-				indx = i*STRIDE;
-				DLSStream oDls = dls_StreamPool.streamList.get(indx);
-				Runnable r = new threaded_Authenticate(oDls, indx);
+				DLSStream stream = dls_StreamPool.streamList.get(i);
+				Runnable r = new threaded_Authenticate(stream, i, listingtask);
 				Thread t = DLSThreadsManager.Resources.reserveSingle(threadGroupID, r);
 				threadList.add(t);
 				t.start();
@@ -165,28 +255,23 @@ public abstract class DLSStream{
 			for(Thread t : threadList){
 				t.join();
 			}
+			//release threads resource
 			DLSThreadsManager.Resources.finalAll(threadGroupID);
-			int init_Streams = 0;
-			for(int i = 0; i < DLSStreamPool.NUM_CONCURRENCY_STREAM; i++){
-				int indx1 = i*STRIDE;
-				if(dls_StreamPool.activeStreamPool_status[indx1] == true){
-					init_Streams ++;
-				}
-			}
+			
+			//sanity check
 			int sanity_check = 0;
-			for(int i = 0; i < dls_StreamPool.MAX_NUM_OPENStream; i++){
-				if(dls_StreamPool.activeStreamPool_status[i] == true){
+			for(int i = 0; i < DLSStreamPool.NUM_CONCURRENCY_STREAM; i++){
+				DLSStream stream = dls_StreamPool.streamList.get(i);
+				if(true == stream.isAvailable){
 					sanity_check ++;
 				}
 			}
+
 			if(sanity_check != dls_StreamPool.MAX_NUM_OPENStream){
-				System.out.println("initStreamPool sanity check failed~!");
-			}
-			if(init_Streams == 0){
-				System.out.println("\nnew Stream Resource "+this.streamKeyID +" failed~! to open #Streams: " + init_Streams +" of total preassigned "+DLSStreamPool.NUM_CONCURRENCY_STREAM/*MAX_NUM_OPENStream*/ + " "+ protocol2 +" protocols~!");
+				System.out.println("\nnew Stream Resource "+this.streamKeyID +" failed~! to open #Streams: " + sanity_check +" of total preassigned "+DLSStreamPool.NUM_CONCURRENCY_STREAM/*MAX_NUM_OPENStream*/ + " "+ protocol2 +" protocols~!");
 				throw new Exception("remote servers deny service~!\n");
 			}else{
-				System.out.println("\nnew Stream Resource "+this.streamKeyID +" finish to open #Streams: " + init_Streams +" of total preassigned "+DLSStreamPool.NUM_CONCURRENCY_STREAM/*MAX_NUM_OPENStream*/  + " "+ protocol2 +" protocols~!");
+				System.out.println("\nnew Stream Resource "+this.streamKeyID +" finish to open #cc: " + DLSStreamPool.NUM_CONCURRENCY_STREAM/*MAX_NUM_OPENStream*/ + " #pp:" + ONE_PIPE_CAPACITY + " of total preassigned " + " "+ protocol2 +" protocols~!");
 				persistent_multi_Streams = true;
 			}
 		}
@@ -194,36 +279,20 @@ public abstract class DLSStream{
 	}
 	
 	class threaded_Authenticate implements Runnable{
-		private DLSStream dls_obj = null;
-		private int activeIndx;
-		threaded_Authenticate(DLSStream obj, int indx){
-			dls_obj = obj;
-			activeIndx = indx;
+		private DLSStream stream = null;
+		private DLSListingTask listingtask = null;
+		threaded_Authenticate(DLSStream obj, int indx, DLSListingTask listingtask){
+			stream = obj;
+			this.listingtask = listingtask;
 		}
 		public void run(){
 			try {
-				String assignedThreadName = dls_obj.username+"@"+dls_obj.host + " ";
-				DLSClient client = dls_obj.createClient();
-				dls_obj.setClient(client);
-				dls_obj.Authenticate("new StreamKey: " + assignedThreadName, "caused to ", token);
-				dls_StreamPool.activeStreamPool_status[activeIndx] = true;
-				final int STRIDE = dls_StreamPool.STRIDE;
-				for(int i = 1; i < STRIDE; i ++){
-					int indx = activeIndx+i;
-					DLSStream oDls = dls_StreamPool.streamList.get(indx);
-					//oDls.setClient(client);
-					dls_StreamPool.activeStreamPool_status[indx] = true;
-				}
+				String assignedThreadName = stream.username+"@"+stream.host + " ";
+				//stream.createClient();
+				stream.Authenticate(listingtask, "new StreamKey: " + assignedThreadName, "caused to ", token);
+				stream.isAvailable = true;
 			} catch (Exception e) {
-				dls_obj.setClient(null);
-				dls_StreamPool.activeStreamPool_status[activeIndx] = false;
-				final int STRIDE = dls_StreamPool.STRIDE;
-				for(int i = 1; i < STRIDE; i ++){
-					int indx = activeIndx+i;
-					DLSStream oDls = dls_StreamPool.streamList.get(indx);
-					oDls.setClient(null);
-					dls_StreamPool.activeStreamPool_status[indx] = false;
-				}
+				stream.isAvailable = false;
 				e.printStackTrace();
 			}
 		}
@@ -241,18 +310,19 @@ public abstract class DLSStream{
 		this.proxyinfo = dlsproxy;
 	}
 	abstract protected String DefaultPort();
-	abstract protected void Authenticate(String assignedThreadName, String path, String token)throws Exception;
+	abstract protected void Authenticate(DLSListingTask listingtask, String assignedThreadName, String path, String token)throws Exception;
 
-	protected Vector<FileInfo> listCMD(String assignedThreadName, String listingFullPath)
+	protected Vector<FileInfo> listCMD(DLSListingTask listingtask, String assignedThreadName, String listingFullPath)
 			throws Exception {
-		Vector<FileInfo> fileList = null;
+	    Vector<FileInfo> fileList = null;
+	    DLSClient proxyclient = listingtask.getClient();
 		try{
 			long st = 0;
 			if(PRINT_TIME){
 				logTime logStart = new logTime();
 				st = logStart.date.getTime();
 			}
-			fileList = dlsclient.list(assignedThreadName, listingFullPath);
+			fileList = proxyclient.list(listingtask, this.localCC, assignedThreadName, listingFullPath);
 			if(PRINT_TIME){
 				logTime logEnd = new logTime();
 				long en = logEnd.date.getTime();
@@ -261,26 +331,40 @@ public abstract class DLSStream{
 			}
 		}catch (Exception ex){
 			//ex.printStackTrace();
-			//System.out.println(ex.toString());
-			if(FAILURE_STATUS.FAILURE_RECOVERABLE == dlsclient.FailureStatus){
-				stream_failstatus = FAILURE_STATUS.FAILURE_RECOVERABLE;
-			}else{
-				stream_failstatus = FAILURE_STATUS.FAILURE_RETRANSMIT;
+			int existed = ex.toString().indexOf("500-500 Command failed");
+			if(-1 != existed){
+			    System.out.println(ex);
+			    System.out.println("stream " + proxyclient.getStream().streamID + " " + assignedThreadName + listingFullPath + " cc stat: " + proxyclient.channelstate);
 			}
-			throw ex;
+			
+		    if(proxyclient.channelstate == CHANNEL_STATE.CC_REVIVE){
+		        /**
+		         * set exception to all the threads which are still queuing.
+		         * And let this thread which caused the CC_REVIVE to revive this cc.
+		         */
+		        System.out.println("stream " + proxyclient.getStream().streamID + " " + assignedThreadName + listingFullPath + " to do CC revive");
+		        throw ex;
+		    }else if(proxyclient.channelstate == CHANNEL_STATE.DC_RETRANSMIT){
+		        System.out.println("stream " + proxyclient.getStream().streamID + " " + assignedThreadName + listingFullPath + " DC migrate");
+		        throw ex;
+		    }else if(proxyclient.channelstate == CHANNEL_STATE.DC_IGNORE){
+		        fileList = null;
+		        System.out.println("stream " + proxyclient.getStream().streamID + " " + assignedThreadName + listingFullPath + " DC ignore");
+		    }
 		}
 		return fileList;		
 	}
 	
 	
-	protected String retrieveContents(String assignedThreadName, String path, DLSResult dlsresult) throws Exception{
+	protected String retrieveContents(DLSListingTask listingtask, 
+	        String assignedThreadName, String path, DLSResult dlsresult) throws Exception{
 		long st = 0;
 		if (!path.endsWith("/"))
 			path = path+"/";		
 		if(PRINT_TIME){
 			st = System.currentTimeMillis();
 		}
-		Vector<FileInfo> fileList = listCMD(assignedThreadName, path);
+		Vector<FileInfo> fileList = listCMD(listingtask, assignedThreadName, path);
 		String list_result = DLSResult.convertion(fileList, dlsresult);
 		if(PRINT_TIME){
 			long en = System.currentTimeMillis();
@@ -288,4 +372,18 @@ public abstract class DLSStream{
 		}
 		return list_result;		
 	}
+	
+	   /**
+     * close channel
+     */
+    public void closeCC() {
+        this.isAvailable = false;
+        try {
+            if(null == localCC) return;
+            localCC.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        localCC = null;
+    }
 }

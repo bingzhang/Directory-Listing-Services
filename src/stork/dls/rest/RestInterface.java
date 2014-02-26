@@ -15,8 +15,8 @@ import com.sun.jersey.multipart.*;
 import stork.dls.ad.Ad;
 import stork.dls.inmemcache.MemoryCache;
 import stork.dls.service.prefetch.DLSThreadsManager;
-import stork.dls.stream.DLSFetchingTask;
 import stork.dls.stream.DLSIOAdapter;
+import stork.dls.stream.DLSListingTask;
 import stork.dls.stream.DLSProxyInfo;
 import stork.dls.util.DLSLogTime;
 
@@ -25,6 +25,7 @@ import stork.dls.util.DLSLogTime;
 public class RestInterface {
 	// URL information for the current request.
 	@Context UriInfo ui;
+	//time test to calculate # users DLS response time
 	public static boolean TIME_TEST = false;
 	private static double user10[] = new double[10];
 	private static double user100[] = new double[100];
@@ -122,7 +123,7 @@ public class RestInterface {
 		long threadID = Thread.currentThread().getId()%MAXIMUM_TICKET;
 		DLSLogTime logStart = new DLSLogTime();
 		DLSProxyInfo dlsproxy = DLSProxyInfo.createDLSProxy(proxyserver, account, passphrase);
-		DLSFetchingTask dlsfetchingTask= new DLSFetchingTask(threadID, uri, dlsproxy, forceRefresh, enablePrefetch, proxy);
+		DLSListingTask dlsfetchingTask = new DLSListingTask(threadID, uri, dlsproxy, forceRefresh, enablePrefetch, proxy);
 		result = concurrentCache.read(threadID, dlsfetchingTask, null);
 		/*
 		if(false == forceRefresh){

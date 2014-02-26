@@ -9,6 +9,8 @@ import org.gridforum.jgss.ExtendedGSSCredential;
 import org.gridforum.jgss.ExtendedGSSManager;
 import org.ietf.jgss.GSSCredential;
 
+import stork.dls.client.DLSClient;
+import stork.dls.stream.DLSListingTask;
 import stork.dls.stream.DLSProxyCred;
 import stork.dls.stream.DLSStream;
 import stork.dls.stream.DLSStreamPool;
@@ -16,7 +18,9 @@ import stork.dls.stream.DLSStreamPool;
 
 final public class GFTPStream extends DLSStream{
 	public GFTPStream(String streamkey) {
-		super(false, streamkey);
+		super(streamkey);
+	}public GFTPStream(int id, String streamkey) {
+	    super(id, streamkey);
 	}
 	public static final int DEFAULT_GFTP_PORT = 2811;
 	private GridFTPClient gfc = null;
@@ -35,7 +39,8 @@ final public class GFTPStream extends DLSStream{
 		}
 	}
 	
-	final protected synchronized void Authenticate(String assignedThreadName, String path, String token) throws Exception {
+	final protected synchronized void Authenticate(DLSListingTask listingtask, 
+	        String assignedThreadName, String path, String token) throws Exception {
 		token = null;
 		cred = DLSProxyCred.getCred(this);
 		gfc = new NodelayGFTPClient(host, port);
@@ -127,8 +132,9 @@ final public class GFTPStream extends DLSStream{
 		int i = 0;
 		for(; i < DLSStreamPool.NUM_CONCURRENCY_STREAM; i ++){
 			DLSStream e = null;
-			e = new GFTPStream(streamkey);
+			e = new GFTPStream(i, streamkey);
 			dls_StreamPool.streamList.add(e);
 		}
 	}
+
 }

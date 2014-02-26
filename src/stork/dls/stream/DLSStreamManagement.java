@@ -25,7 +25,7 @@ public class DLSStreamManagement {
 				final DLSStream dls_StreamMng = new DLSFTPStream(streamkey);
 				supportedProtocols.put("ftpDLS", dls_StreamMng);
 			}if(protocol.toLowerCase().equals("gsiftpdls")){
-				final DLSStream dls_StreamMng = new DLSGSIFTPStream(streamkey, true);
+				final DLSStream dls_StreamMng = new DLSGSIFTPStream(streamkey);
 				supportedProtocols.put("gsiftpDLS", dls_StreamMng);
 			}else if(protocol.toLowerCase().equals("ftp")){
 				final DLSStream dls_StreamMng = new FTPStream(streamkey);
@@ -41,7 +41,8 @@ public class DLSStreamManagement {
 	}	
 	private HashMap<String, DLSManager> inMemoryStreamsMap = new HashMap<String, DLSManager>();
 	
-	public DLSStream allocate_Stream(URI uri, DLSProxyInfo dlsproxy, String proxyCertContent, String token) throws Exception{
+	public DLSStream allocate_Stream(DLSListingTask listingtask, DLSProxyInfo dlsproxy, String proxyCertContent, String token) throws Exception{
+	    URI uri = listingtask.getUri();
 		int port = uri.getPort();
 		String protocol = uri.getScheme();
 		String serverName = uri.getHost();
@@ -139,7 +140,7 @@ public class DLSStreamManagement {
 					curStreamMng.proxyinfo = dlsproxy;
 					new DLSProxyCred(curStreamMng.proxyinfo, curStreamMng.getStreamKey());
 				}
-				curStreamMng.initStreamPool(uri, dlsproxy, proxyCertContent, token);
+				curStreamMng.initStreamPool(listingtask, token);
 			}catch (Exception ex){
 				dls_manager.supportedProtocols.remove(protocolKey);
 				curStreamMng = null;

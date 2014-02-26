@@ -4,6 +4,8 @@ import java.util.Vector;
 
 import org.globus.ftp.FileInfo;
 
+import stork.dls.client.DLSClient;
+import stork.dls.stream.DLSListingTask;
 import stork.dls.stream.DLSStream;
 import stork.dls.stream.DLSStreamPool;
 import stork.dls.util.XMLString;
@@ -24,7 +26,9 @@ import com.jcraft.jsch.UserInfo;
  */
 public class SFTPStream extends DLSStream{
 	public SFTPStream(String streamkey) {
-		super(false, streamkey);
+		super(streamkey);
+	}public SFTPStream(int id, String streamkey) {
+	    super(id, streamkey);
 	}
 
 	private static final int DEFAULT_SFTP_PORT = 22;
@@ -39,7 +43,8 @@ public class SFTPStream extends DLSStream{
 		return "sftp";
 	}	
 	
-	final protected synchronized void Authenticate(String assignedThreadName, String path, String token) throws Exception {
+	final protected synchronized void Authenticate(final DLSListingTask listingtask, 
+	        String assignedThreadName, String path, String token) throws Exception {
 		jsch = new JSch();
 		
 		UserInfo ui = new MyUserInfo(password);
@@ -150,7 +155,7 @@ public class SFTPStream extends DLSStream{
 		for(; i < DLSStreamPool.NUM_CONCURRENCY_STREAM; i ++){
 			DLSStream e = null;
 			e = new SFTPStream(streamkey);
-			dls_StreamPool.streamList.add(e);
+			dls_StreamPool.streamList.add(i, e);
 		}
 		
 	}

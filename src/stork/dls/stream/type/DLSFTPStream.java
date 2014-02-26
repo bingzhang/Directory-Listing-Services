@@ -5,6 +5,10 @@ import org.globus.ftp.exception.ClientException;
 import org.globus.ftp.exception.ServerException;
 
 import stork.dls.client.DLSClient;
+import stork.dls.client.DLSGSIFTPClient;
+import stork.dls.service.prefetch.WorkerThread;
+import stork.dls.stream.DLSListingTask;
+import stork.dls.stream.DLSProxyCred;
 import stork.dls.stream.DLSStream;
 import stork.dls.stream.DLSStreamPool;
 import stork.dls.util.DLSLog;
@@ -23,44 +27,29 @@ public class DLSFTPStream extends DLSStream{
 	private boolean authorized = false;
 	
 	public DLSFTPStream(String streamKey) {
-		super(true, streamKey);
-		stream_failstatus = FAILURE_STATUS.FAILURE_RETRANSMIT;
+		super(streamKey);
 	}
 	
-	protected DLSFTPStream(boolean TwoD, String streamKey) {
-		super(true, streamKey);
-		stream_failstatus = FAILURE_STATUS.FAILURE_RETRANSMIT;
+	protected DLSFTPStream(int id, String streamKey) {
+		super(id, streamKey);
 	}
 
-	@Override
-	public void close() {
-		super.dlsclient = null;
-	}
 	/*
 	@Override
 	protected void setInfo(String host, int port, String username, 
 			String password, String protocol, String proxyCertContent, String token){
-		dlsclient.setHP(host, port);
+		proxyclient.setHP(host, port);
 		super.setInfo(host, port, username, password, protocol, proxyCertContent, token);
 	}*/
 	
-	@Override
-	protected DLSClient createClient(){
-		DLSClient client = new DLSClient(host, port);
-		stream_failstatus = FAILURE_STATUS.FAILURE_RETRANSMIT;
-		return client;
-	}
 	
 	@Override
 	public void fillStreamPool(String streamkey) {
 		int i = 0;
 		for(; i < DLSStreamPool.NUM_CONCURRENCY_STREAM; i ++){
-			int j = 0;
-			for(;j <DLSStreamPool.ONE_PIPE_CAPACITY; j ++){
-				DLSStream e = null;
-				e = new DLSFTPStream(streamkey);
-				dls_StreamPool.streamList.add(e);
-			}
+			DLSStream e = null;
+			e = new DLSFTPStream(i, streamkey);
+			dls_StreamPool.streamList.add(e);
 		}
 	}
 
@@ -72,25 +61,37 @@ public class DLSFTPStream extends DLSStream{
 	}
 
 	@Override
-	protected synchronized void  Authenticate(String assignedThreadName, String path,
+	protected synchronized void  Authenticate(DLSListingTask listingtask, String assignedThreadName, String path,
 			String token) throws Exception {
-		if(FAILURE_STATUS.FAILURE_RECOVERABLE == stream_failstatus){
-			if(null != dlsclient){
-				dlsclient.close();
-			}
-			dlsclient = new DLSClient(super.host, super.port);
-		}
-		
-		if (null == username || username.isEmpty())
-			username = "anonymous";
-		if (null == password)
-			password = "";
-		
-		dlsclient.authenticate(assignedThreadName, username, password);
-        this.authorized = true;
-        dlsclient.isAvailable = true;
-		if(DEBUG_PRINT){
-			System.out.println(assignedThreadName + " "+path +" establish a new dlsftp Stream~!");
+        DLSClient authclient = new DLSClient(host, port, this);
+	    
+		while(true){
+		    if(spinlock.writeLock().tryLock()){
+		        try{
+	                try{
+	            		if (null == username || username.isEmpty())
+	            			username = "anonymous";
+	            		if (null == password)
+	            			password = "";
+	                    this.localCC = authclient.authenticate(listingtask, assignedThreadName, username, password);
+	                    this.authorized = true;
+	                    this.isAvailable = true;
+	                    this.value = ONE_PIPE_CAPACITY;
+	                }catch (Exception ex){
+	                    ex.printStackTrace();
+	                    if(null != authclient){
+	                        authclient.closeDC();
+	                    }
+	                    throw new Exception(ex);
+	                }
+	                if(DEBUG_PRINT){
+	                    System.out.println(assignedThreadName + " "+path +" establish a new dlsgsiftp stream~!");
+	                }
+		        }finally{
+		            spinlock.writeLock().unlock();
+		        }
+		        break;
+		    }		        
 		}
 	}
 
@@ -99,16 +100,16 @@ public class DLSFTPStream extends DLSStream{
 
 	@Override
 	protected void finalize() throws Throwable {
-		dlsclient.close();
+		closeCC();
 		super.finalize();
 		if(DEBUG_PRINT){
 			logger.debug("StreamGFTP.finalize ~!");
 		}
 	}
-	/**
-	 * @param args
-	 */
-	public static void main(String[] args) {
-	}
 
+    @Override
+    public void close() {
+        // TODO Auto-generated method stub
+        
+    }
 }

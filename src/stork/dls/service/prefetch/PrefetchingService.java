@@ -10,9 +10,6 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import stork.dls.service.prefetch.PrefetchingServices.PrefetchingWorkers;
 
-/**
-* @author bingzhan@buffalo.edu (Bing Zhang)
-*/
 
 public class PrefetchingService {
 	private final ReadWriteLock spinlock = new ReentrantReadWriteLock();

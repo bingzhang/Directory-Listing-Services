@@ -4,7 +4,6 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
@@ -18,11 +17,10 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-import stork.dls.ad.Ad;
 import stork.dls.service.prefetch.PrefetchingService.PrefetchingVM;
-import stork.dls.stream.DLSFetchingTask;
 import stork.dls.stream.DLSIOAdapter;
 import stork.dls.stream.DLSIOAdapter.FETCH_PREFETCH;
+import stork.dls.stream.DLSListingTask;
 import stork.dls.stream.DLSProxyInfo;
 import stork.dls.stream.DLSStream;
 import stork.dls.util.DLSLogTime;
@@ -60,6 +58,7 @@ public class PrefetchingServices implements Runnable {
 	private final String proxyCertContent;
 	private final String token;
 	private final String StreamKey;
+	private final DLSListingTask fetchingtask;
 	private int SAFE_MAX_WORKERTHREADS;
 	private int MAXIMUM_WORKERTHREADS;
 
@@ -76,8 +75,9 @@ public class PrefetchingServices implements Runnable {
 	 * @param token
 	 * @throws Exception
 	 */
-	public PrefetchingServices(String prefetchingThreadID, List<String> source, DLSFetchingTask fetchingtask, String token)
+	public PrefetchingServices(String prefetchingThreadID, List<String> source, DLSListingTask fetchingtask, String token)
 			throws Exception {
+	    this.fetchingtask = fetchingtask;
 		this.prefetchingThreadID = prefetchingThreadID;
 		this.dlsproxy = fetchingtask.getDlsproxy();
 		this.source = source;
@@ -105,7 +105,7 @@ public class PrefetchingServices implements Runnable {
 		}else{//2.) else 
 			DLSStream streamStat = null;
 			try {
-				streamStat = DLSIOAdapter.initStream(uri, dlsproxy, this.proxyCertContent);
+				streamStat = DLSIOAdapter.initStream(fetchingtask, uri, dlsproxy, this.proxyCertContent);
 				MAXIMUM_WORKERTHREADS = streamStat.get_MAX_NUM_OPENStream();
 				//String protocol = streamStat.get_realprotocol();
 				String protocol = "no specfic protocol";
@@ -171,7 +171,8 @@ public class PrefetchingServices implements Runnable {
 					DLSIOAdapter ioAdapter = null;
 					ioAdapter = new DLSIOAdapter();
 					try {
-						result = ioAdapter.StreamSnapshot(uri);
+					    DLSListingTask listingtask = new DLSListingTask(uri);
+						result = ioAdapter.StreamSnapshot(listingtask);
 					} catch (Exception e) {
 						e.printStackTrace();
 					} finally {
@@ -316,7 +317,7 @@ public class PrefetchingServices implements Runnable {
 			} catch (URISyntaxException e) {
 				e.printStackTrace();
 			}
-			DLSFetchingTask fetchingtask1 = new DLSFetchingTask(0, newuri, dlsproxy1, false, false, proxyCertContent);
+			DLSListingTask fetchingtask1 = new DLSListingTask(0, newuri, dlsproxy1, false, false, proxyCertContent);
 			try {
 				result = ioAdapter.getDirectoryContents(assignedThreadName, fetchingtask1, dlsresult, -1, token);
 			} catch (Exception e) {

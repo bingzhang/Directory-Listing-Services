@@ -30,7 +30,7 @@ public class DLSThreadsManager implements ResourceManager{
 	
 	DLSThreadsManager(int MAX_THREADS){
 		int threadName = 0;
-		final String prefixName = "prefetchThreads-";
+		final String prefixName = "preThrd-";
 		for(int i = 0; i < MAX_THREADS; i ++){
 			WorkerThread t = new WorkerThread();
 			String threadID = String.valueOf(threadName);

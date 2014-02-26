@@ -23,6 +23,10 @@ import org.globus.ftp.vanilla.Reply;
 import org.globus.net.SocketFactory;
 
 import stork.dls.client.DLSClient;
+import stork.dls.client.DLSGSIFTPClient;
+import stork.dls.config.DLSConfig;
+import stork.dls.stream.DLSListingTask;
+import stork.dls.stream.DLSStream;
 import stork.dls.util.DLSLog;
 
 /**
@@ -35,7 +39,7 @@ public class DLSFTPMetaChannel {
     private static DLSLog logger =
     		DLSLog.getLog(DLSFTPMetaChannel.class.getName());
 	private MetaChannel localmetachannel = null;
-    public final static int ONE_PIPE_CAPACITY = MetaChannel.ONE_PIPE_CAPACITY;
+    public final static int ONE_PIPE_CAPACITY = DLSConfig.DLS_PIPE_CAPACITY;
 	protected HostPort remoteServerAddress;
 	protected SocketBox socketBox;
     protected Socket socket;
@@ -46,11 +50,11 @@ public class DLSFTPMetaChannel {
     public final int port;
     protected boolean hasBeenOpened = false;
     private boolean ipv6 = false;
-    private final DLSClient destroy;
+    protected DLSStream stream;
     
     
-    public DLSFTPMetaChannel(DLSClient tobeDestroied, String host, int port) {
-    	this.destroy = tobeDestroied;
+    public DLSFTPMetaChannel(DLSStream stream, String host, int port) {
+        this.stream = stream;
         this.host = host;
         this.port = port;
         this.ipv6 = (this.host.indexOf(':') != -1);
@@ -126,6 +130,9 @@ public class DLSFTPMetaChannel {
                     InetSocketAddress isa = new InetSocketAddress(allIPs[i], port);
                     this.socket = new Socket();
                     this.socket.setSoTimeout(0);
+                    if(DLSConfig.TCPNODELAY){
+                        this.socket.setTcpNoDelay(true);
+                    }
                     this.socket.connect(isa, timeout);
                     break;
                 }
@@ -158,13 +165,8 @@ public class DLSFTPMetaChannel {
         readInitialReplies();
         hasBeenOpened = true;
         this.remoteServerAddress = new HostPort(socket.getInetAddress(), port);
-        try {
-			socketBox = DLSFTPMetaChannel.openSocket(this.remoteServerAddress);
-		} catch (Exception e) {
-			e.printStackTrace();
-			socketBox = null;
-			throw e;
-		}
+        SocketBox socketBox = new SimpleSocketBox();
+        socketBox.setSocket(socket);        
     }
 	
     public void setInputStream(InputStream in) {
@@ -181,6 +183,11 @@ public class DLSFTPMetaChannel {
         SocketBox sBox = new SimpleSocketBox();
         SocketFactory factory = SocketFactory.getDefault();
         Socket mySocket = factory.createSocket(hp.getHost(), hp.getPort());
+        //set 2sec for socket read timeout.
+        mySocket.setSoTimeout(2000);
+        if(DLSConfig.TCPNODELAY){
+            mySocket.setTcpNoDelay(true);
+        }
         sBox.setSocket(mySocket);
         return sBox;
     }
@@ -221,7 +228,7 @@ public class DLSFTPMetaChannel {
     }
     
     /**
-     * Closes the control channel connected to remote 21 port
+     * Closes the control channel connected to remote port
      */
     public void close() throws IOException {
         logger.debug("ftp socket closed");
@@ -230,7 +237,7 @@ public class DLSFTPMetaChannel {
         if (ftpOut != null)
             ftpOut.close();
         if (socket != null)
-            socket.close();
+            socket.close();//close channel socket
         hasBeenOpened = false;
         localmetachannel = null;
     }
@@ -241,14 +248,17 @@ public class DLSFTPMetaChannel {
      * @param cmd FTP command
      * @throws Exception 
      */
-    public List<Reply> exchange(final String assignedThread, List<Command> cmds, List<ReplyParser> replyParserChain, List<LocalReply> writeBacks)
+    public List<Reply> exchange(DLSListingTask listingtask, final String assignedThread, List<Command> cmds, List<ReplyParser> replyParserChain, List<LocalReply> writeBacks)
     		 throws IOException, ServerException{
     	List<Reply> replies = null;
         if(null == localmetachannel){
-        	localmetachannel = new MetaChannel(this.destroy, this.remoteServerAddress, socketBox, ftpIn, ftpOut);
-        	//localmetachannel = new MetaChannel_Simple(this.remoteServerAddress, socketBox, ftpIn, ftpOut);
+            if(DLSGSIFTPClient.CONTROLCHANNEL_LISTING){
+                localmetachannel = new MetaChannel_State(this.stream, this.remoteServerAddress, socketBox, ftpIn, ftpOut);
+            }else {
+                localmetachannel = new MetaChannel(this.stream, this.remoteServerAddress, socketBox, ftpIn, ftpOut);
+            }
         }
-    	replies = localmetachannel.sendrecv(assignedThread, cmds, replyParserChain, writeBacks);
+    	replies = localmetachannel.sendrecv(listingtask, assignedThread, cmds, replyParserChain, writeBacks);
         return Collections.unmodifiableList(replies);
     }
 
@@ -259,4 +269,15 @@ public class DLSFTPMetaChannel {
 
 	}
 
+	public int getCapacity() {
+		return localmetachannel.getCapacity();
+	}
+
+	public int reserveCapacity() {
+		return localmetachannel.reserveCapacity();
+	}
+    
+	public void releaseCapacity() {
+        localmetachannel.releaseCapacity();
+    }
 }

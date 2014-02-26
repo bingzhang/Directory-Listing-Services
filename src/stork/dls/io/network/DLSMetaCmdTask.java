@@ -15,6 +15,7 @@ import org.globus.ftp.vanilla.Command;
 import org.globus.ftp.vanilla.Reply;
 
 import stork.dls.service.prefetch.WorkerThread;
+import stork.dls.stream.DLSListingTask;
 import stork.dls.util.DLSLog;
 
 /**
@@ -28,7 +29,7 @@ public class DLSMetaCmdTask{
 	final String assignedThreadName;
 	boolean isComplete = false;
 	boolean isException = false;
-	//private final WorkerThread wt;
+	final private DLSListingTask listingtask;
 	private final Thread wt;
 	private final List<Command> cmds;
 	private final List<ReplyParser> replyParserChain;
@@ -41,7 +42,12 @@ public class DLSMetaCmdTask{
 	private int waitOn = 0;
 	private int wakeUp = 0;
 	private int writeBacksNum = 0;
-
+	
+	
+	public DLSListingTask getListingTask(){
+	    return this.listingtask;
+	}
+	
 	public List<ReplyParser> getReplayParserChain(){
 		return Collections.unmodifiableList(this.replyParserChain);
 	}
@@ -50,12 +56,13 @@ public class DLSMetaCmdTask{
 		return this.assignedThreadName;
 	}
 	
-	DLSMetaCmdTask(final String assignedThreadName, final List<Command> cmds, final List<ReplyParser> replyParserChain, final List<LocalReply> writeBacks){
+	DLSMetaCmdTask(DLSListingTask listingtask, final String assignedThreadName, 
+	        final List<Command> cmds, final List<ReplyParser> replyParserChain, 
+	        final List<LocalReply> writeBacks){
+	    this.listingtask = listingtask;
 		this.assignedThreadName = assignedThreadName;
 		this.cmds = cmds;
-		Thread t = Thread.currentThread();
-		//this.wt  = (WorkerThread)t;
-		this.wt = t;
+		this.wt = Thread.currentThread();	
 		if(null != writeBacks){
 			this.writeBacks = Collections.unmodifiableList(writeBacks);
 		}else{
@@ -114,37 +121,72 @@ public class DLSMetaCmdTask{
 		return reply;
 	}
 	
+	public synchronized boolean wakeUpInplace(Reply reply, boolean isException){
+        if(isException){
+            this.isException = isException;
+            logger.debug("PipeEvent: thread = " + wt.getName() + " got exception~" + reply);
+        }else{
+            logger.debug("PipeEvent: thread = " + wt.getName() + " got wakedUp~!");
+        }
+        boolean ret = wakeUp < this.cmdsNum;
+        if(ret){
+            value++;
+            if (waitCount > notify) {
+                notify++;
+                notify();
+            }
+            replies.add(reply);
+            //wakeUp ++;
+            ret = wakeUp < this.cmdsNum;
+        }
+        if(false == isException){
+            this.isComplete = !ret;
+        }else{
+            this.isComplete = false;
+        }
+        return ret;
+    }
+	
 	public synchronized boolean wakeUp(Reply reply, boolean isException){
-		boolean ret = wakeUp < this.cmdsNum;
+        if(isException){
+            this.isException = isException;
+            logger.debug("PipeEvent: thread = " + wt.getName() + " got exception~" + reply);
+        }else{
+            logger.debug("PipeEvent: thread = " + wt.getName() + " got wakedUp~!");
+        }
+	    boolean ret = wakeUp < this.cmdsNum;
 		if(ret){
-			if(isException){
-				this.isException = isException;	
-			}
 			value++;
 			if (waitCount > notify) {
 				notify++;
 				notify();
 			}
-			logger.debug("PipeEvent: thread = " + wt.getName() + " got wakedUp~!");
 			replies.add(reply);
 			wakeUp ++;
 			ret = wakeUp < this.cmdsNum;
 		}
-		this.isComplete = !ret;
+		if(false == isException){
+		    this.isComplete = !ret;
+		}else{
+		    this.isComplete = false;
+		}
 		return ret;
 	}
 	
 	public synchronized boolean execute(){
 		boolean ret = wakeUp < this.cmdsNum;
+		boolean hasWriteback = false; //for debug
 		if(ret){
 			if(null != writeBacks){
 				final Reply writeback = writeBacks.get(writeBacksNum);
 				if(null != writeback){
 					ret = wakeUp(writeback, false);
 					writeBacksNum ++;
+					hasWriteback = true;
 				};
 			}
 		}
+		ret = hasWriteback;// for debug
 		return ret;
 	}
 	/**

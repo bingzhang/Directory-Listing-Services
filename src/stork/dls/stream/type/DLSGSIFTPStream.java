@@ -7,6 +7,8 @@ import org.ietf.jgss.GSSCredential;
 
 import stork.dls.client.DLSClient;
 import stork.dls.client.DLSGSIFTPClient;
+import stork.dls.service.prefetch.WorkerThread;
+import stork.dls.stream.DLSListingTask;
 import stork.dls.stream.DLSProxyCred;
 import stork.dls.stream.DLSStream;
 import stork.dls.stream.DLSStreamPool;
@@ -25,38 +27,22 @@ public class DLSGSIFTPStream extends DLSStream{
 	public static final int DEFAULT_FTP_PORT = 2811;
 	private boolean authorized = false;
 	
-	public DLSGSIFTPStream(String streamkey, boolean flag){
-		super(true, streamkey);
-		stream_failstatus = FAILURE_STATUS.FAILURE_RETRANSMIT;
-	}
-	
 	public DLSGSIFTPStream(String streamkey){
-		super(true, streamkey, true);
-		stream_failstatus = FAILURE_STATUS.FAILURE_RETRANSMIT;
-	}
-	protected DLSGSIFTPStream(boolean TwoD, String streamkey) {
-		super(true, streamkey);
-		stream_failstatus = FAILURE_STATUS.FAILURE_RETRANSMIT;
+		super(streamkey);
+		//stream_failstatus = FAILURE_STATUS.FAILURE_RETRANSMIT;
+	}public DLSGSIFTPStream(int id, String streamkey){
+		super(id, streamkey);
+		//stream_failstatus = FAILURE_STATUS.FAILURE_RETRANSMIT;
+	}protected DLSGSIFTPStream(boolean TwoD, String streamkey) {
+		super(streamkey);
+		//stream_failstatus = FAILURE_STATUS.FAILURE_RETRANSMIT;
 	}
 
 	@Override
-	public void close() {
-		super.dlsclient = null;
-	}
-	@Override
-	protected DLSClient createClient(){
-		DLSClient client = new DLSGSIFTPClient(host, port);
-		stream_failstatus = FAILURE_STATUS.FAILURE_RETRANSMIT;
-		return client;
-	}
-	@Override
 	public void fillStreamPool(String streamkey) {
 		for(int i = 0; i < DLSStreamPool.NUM_CONCURRENCY_STREAM; i ++){
-			int j = 0;
-			DLSStream e = new DLSGSIFTPStream(streamkey);
-			for(;j <DLSStreamPool.ONE_PIPE_CAPACITY; j ++){
-				dls_StreamPool.streamList.add(e);
-			}
+			DLSStream e = new DLSGSIFTPStream(i, streamkey);
+			dls_StreamPool.streamList.add(e);
 		}
 	}
 
@@ -67,38 +53,52 @@ public class DLSGSIFTPStream extends DLSStream{
 		//protocol = "gsiftpdls";
 		return realprotocol;
 	}
-
+	/**
+	 * when do Authenticate, everything related to this stream should stop
+	 * So, synchronized on this stream is safely OK.
+	 */
 	@Override
-	protected synchronized void Authenticate(String assignedThreadName, String path,
+	protected void Authenticate(DLSListingTask listingtask, String assignedThreadName, String path,
 			String token) throws Exception {
 		token = null;
-		if(FAILURE_STATUS.FAILURE_RECOVERABLE == stream_failstatus){
-			if(null != dlsclient){
-				dlsclient.close();
-			}
-			dlsclient = new DLSGSIFTPClient(super.host, super.port);
-		}
-		try{
-			if(null == this.cred){
-				this.cred = DLSProxyCred.getCred(this);				
-			}
-			dlsclient.authenticate(assignedThreadName, this.cred, username);
-			this.authorized = true;
-	        dlsclient.isAvailable = true;
-		}catch (Exception ex){
-			//ex.printStackTrace();
-			throw new Exception(ex);
-		}
-		if(DEBUG_PRINT){
-			System.out.println(assignedThreadName + " "+path +" establish a new dlsgsiftp stream~!");
+		this.isAvailable = false;
+		DLSClient authclient = new DLSGSIFTPClient(host, port, this);
+
+		while(true){
+		    if(spinlock.writeLock().tryLock()){
+		        try{
+	                try{
+	                    if(null == this.cred){
+	                        this.cred = DLSProxyCred.getCred(this);             
+	                    }
+	                    this.localCC = authclient.authenticate(listingtask, assignedThreadName, this.cred, username);
+	                    this.authorized = true;
+	                    this.isAvailable = true;
+	                    this.value = ONE_PIPE_CAPACITY;
+	                }catch (Exception ex){
+	                    ex.printStackTrace();
+	                    if(null != authclient){
+	                        authclient.closeDC();
+	                    }
+	                    throw new Exception(ex);
+	                }
+	                if(DEBUG_PRINT){
+	                    System.out.println(assignedThreadName + " "+path +" establish a new dlsgsiftp stream~!");
+	                }
+		        }finally{
+		            spinlock.writeLock().unlock();
+		        }
+		        break;
+		    }		        
 		}
 	}
+	
 	public void setPassiveMode(boolean passiveMode)
 	        throws IOException, ClientException, ServerException {return;}
-	
-	/**
-	 * @param args
-	 */
-	public static void main(String[] args) {
-	}
+
+    @Override
+    public void close() {
+        // TODO Auto-generated method stub
+        
+    }
 }

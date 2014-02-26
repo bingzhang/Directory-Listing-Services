@@ -1,9 +1,18 @@
 package stork.dls.service.prefetch;
 
+import stork.dls.client.DLSClient;
+
+
+/**
+ * the system basic computation unite
+ * @author bing
+ *
+ */
 public class WorkerThread extends Thread{
 	public static boolean DEBUG_PRINT;//false;//true
 	private Runnable target = null;
 	private String assignedGroup = null;
+	
 	public void setTask(Runnable task, String assignedGroup){
 		this.target = task;
 		this.assignedGroup = assignedGroup;
@@ -41,9 +50,4 @@ public class WorkerThread extends Thread{
 			}
 		}
 	}
-
-	public static void main(String[] args) {
-	}
-
-
 }

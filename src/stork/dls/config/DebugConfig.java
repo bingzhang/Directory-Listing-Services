@@ -6,6 +6,7 @@ import stork.dls.io.network.DLSFTPMetaChannel;
 import stork.dls.io.network.DLSMetaCmdTask;
 import stork.dls.io.network.DLSSimpleTransferReader;
 import stork.dls.io.network.MetaChannel;
+import stork.dls.io.network.MetaChannel_State;
 import stork.dls.service.prefetch.DLSThreadsManager;
 //import stork.dls.service.PipeStream;
 import stork.dls.service.prefetch.MyThreadPoolExecutor;
@@ -21,10 +22,14 @@ import stork.dls.stream.type.DLSFTPStream;
  */
 public class DebugConfig {
 	/**
-	 * only for debug
+	 * for debug
 	 */
 	public static void DebugPrint(){
+	    MetaChannel_State.DEBUG_PRINT = false;
 		MetaChannel.DEBUG_PRINT = false;//true;
+		MetaChannel_State.DEBUG_PRINT = false;
+		DLSMetaCmdTask.DEBUG_PRINT = false;//true;
+		
 		DLSStreamPool.DEBUG_PRINT = false;//false;true;
 		PrefetchingServices.DEBUG_PRINT = false;//true;
 		
@@ -40,8 +45,7 @@ public class DebugConfig {
 		MyThreadPoolExecutor.DEBUG_PRINT = false;//true;
 		DLSFTPStream.DEBUG_PRINT = false;//true;
 		DLSFTPMetaChannel.DEBUG_PRINT = false;//true;
-		
-		DLSMetaCmdTask.DEBUG_PRINT = false;//true;
+				
 		DLSSimpleTransferReader.DEBUG_PRINT = false;//true;
 		
 		//all the protocols stream class

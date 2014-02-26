@@ -157,7 +157,7 @@ public class DLSResult {
     			//permission checking
     			if(fileInfo.allCanRead() || fileInfo.groupCanRead()){
     				dlsresult.subdirPathInfo.add(rel_path);	
-    				System.out.println(rel_path);
+    				//System.out.println(rel_path);
     			}
             }
 		}

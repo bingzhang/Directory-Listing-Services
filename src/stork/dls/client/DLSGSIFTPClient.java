@@ -47,6 +47,8 @@ import org.ietf.jgss.GSSName;
 import stork.dls.io.network.DLSFTPMetaChannel;
 import stork.dls.io.network.DLSSimpleTransferReader;
 import stork.dls.io.network.ReplyParser;
+import stork.dls.stream.DLSListingTask;
+import stork.dls.stream.DLSStream;
 import stork.dls.util.DLSLog;
 
 /**
@@ -58,6 +60,8 @@ import stork.dls.util.DLSLog;
  */
 public class DLSGSIFTPClient extends DLSClient{
 	public static boolean DEBUG_PRINT;
+	public static boolean CONTROLCHANNEL_LISTING = false;//false
+	
 	private static DLSLog logger = DLSLog.getLog(DLSGSIFTPClient.class.getName());
 
 	protected String username = null;
@@ -70,13 +74,9 @@ public class DLSGSIFTPClient extends DLSClient{
     protected OutputStream ftpOut;
     protected BufferedReader ftpIn;
     public String DCAU;
-    
-    
-	protected DLSGSIFTPClient(){
-	}
-	public DLSGSIFTPClient(String host, int port){
-		this.host = host;
-		this.port = port;
+
+	public DLSGSIFTPClient(String host, int port, DLSStream input){
+		super(host, port, input);
 	}
 	
     private String getHandshakeToken(byte [] token) 
@@ -106,11 +106,11 @@ public class DLSGSIFTPClient extends DLSClient{
 		return tokenCmd;
 	}
 	
-	private GSSName getExpectedName(GSSCredential credential)  throws Exception {
+	private GSSName getExpectedName(DLSFTPMetaChannel localCC, 
+	        GSSCredential credential)  throws Exception {
 		GSSName expectedName = null;
-		
 		try {
-        	socket = localmetachannel.getSocket();
+        	socket = localCC.getSocket();
             String host = this.socket.getInetAddress().getHostAddress();
 
             if (this.authorization instanceof GSSAuthorization) {
@@ -175,15 +175,18 @@ public class DLSGSIFTPClient extends DLSClient{
      * @throws ServerException on server refusal or faulty server behavior
      */
 	@Override
-    public void authenticate(final String threadAssignedName, final GSSCredential credential,
-                             String username)
+    public DLSFTPMetaChannel authenticate(
+            final DLSListingTask listingtask, 
+            final String threadAssignedName, 
+            final GSSCredential credential,
+            String username)
         throws Exception {
-    	localmetachannel = new DLSFTPMetaChannel(this, host, port);
-    	localmetachannel.open();
-    	socket   = localmetachannel.getSocket();
-    	ftpIn    = localmetachannel.get_ftpIn();
-    	ftpOut   = localmetachannel.get_ftpOut();
-    	rawFtpIn = localmetachannel.get_rawFtpIn();
+	    final DLSFTPMetaChannel localCC = new DLSFTPMetaChannel(this.stream, host, port);
+    	localCC.open();
+    	socket   = localCC.getSocket();
+    	ftpIn    = localCC.get_ftpIn();
+    	ftpOut   = localCC.get_ftpOut();
+    	rawFtpIn = localCC.get_rawFtpIn();
     	
         setCredentials( credential );
         write(new Command("AUTH", "GSSAPI"));
@@ -196,7 +199,7 @@ public class DLSGSIFTPClient extends DLSClient{
                                       "Received faulty reply to AUTH GSSAPI");
         }
         if (! Reply.isPositiveIntermediate(reply0)) {
-           close();
+           stream.closeCC();
            throw ServerException.embedUnexpectedReplyCodeException(
                                   new UnexpectedReplyCodeException(reply0),   
                                   "Server refused GSSAPI authentication.");
@@ -206,7 +209,7 @@ public class DLSGSIFTPClient extends DLSClient{
         GridFTPInputStream gssin = null;
 
         try {
-            GSSName expectedName = getExpectedName(credential);
+            GSSName expectedName = getExpectedName(localCC, credential);
             context = getContext(expectedName, credential);
             gssout = new GridFTPOutputStream(ftpOut, context);
             gssin = new GridFTPInputStream(rawFtpIn, context);
@@ -248,23 +251,25 @@ public class DLSGSIFTPClient extends DLSClient{
         }
         
         if ( ! Reply.isPositiveCompletion(reply1)) {
-            close();
+            stream.closeCC();
             throw ServerException.embedUnexpectedReplyCodeException(
                                     new UnexpectedReplyCodeException(reply1),
                                     "GSSAPI authentication failed.");
         }
         logger.debug("DLSGSIFTP authentication successful~!");
         // enter secure mode - send MIC commands
-        this.localmetachannel.setInputStream(gssin);
-        this.localmetachannel.setOutputStream(gssout);
+        localCC.setInputStream(gssin);
+        localCC.setOutputStream(gssout);
         //from now on, the commands and replies
         //are protected and pass through gsi wrapped socket
-        login(threadAssignedName, username, null);
+        login(listingtask, localCC, threadAssignedName, username, null);
+        return localCC;
     }
 	/**
 	 * DCAU is NONE
 	 */
-	protected void login(final String threadAssignedName, String username, String password) throws IOException, ServerException{
+	protected void login(DLSListingTask listingtask, final DLSFTPMetaChannel localCC,final String threadAssignedName,
+	        String username, String password) throws IOException, ServerException{
     	final String subject = threadAssignedName;
     	final Command userCmd = new Command("USER", (username == null) ? ":globus-mapping:" : username);
 		final Command passCmd = new Command("PASS", "dummy");
@@ -281,7 +286,7 @@ public class DLSGSIFTPClient extends DLSClient{
 				if (Reply.isPositiveIntermediate(userReply)) {
 				}else if (Reply.isPositiveCompletion(userReply)){
 				}else{
-					close();
+					stream.closeCC();
 			           throw ServerException.embedUnexpectedReplyCodeException(
                                new UnexpectedReplyCodeException(userReply),
                                "User authorization failed.");
@@ -299,6 +304,7 @@ public class DLSGSIFTPClient extends DLSClient{
 					ServerException {
 				logger.debug("received PASS cmd reply: " + passReply);
 				if (!Reply.isPositiveCompletion(passReply)) {
+				    stream.closeCC();
 	                throw ServerException.embedUnexpectedReplyCodeException(
 	                                   new UnexpectedReplyCodeException(passReply),
 	                                   "Bad password.");
@@ -319,6 +325,7 @@ public class DLSGSIFTPClient extends DLSClient{
 					ServerException {
 				logger.debug("received DCAU N cmd reply: " + dcauReply);
 				if (!Reply.isPositiveCompletion(dcauReply)) {
+				    stream.closeCC();
 	                throw ServerException.embedUnexpectedReplyCodeException(
 	                                   new UnexpectedReplyCodeException(dcauReply),
 	                                   "DCAU N failed.");
@@ -332,7 +339,20 @@ public class DLSGSIFTPClient extends DLSClient{
 		};
 		replyParserChain.add(thirdReplyParser);
 		
-		localmetachannel.exchange(threadAssignedName, cmds, replyParserChain, null);
+		if(DLSGSIFTPClient.CONTROLCHANNEL_LISTING){
+		    final Command optsCmd = new Command("OPTS", "MLST Type*;Size*;Modify*;UNIX.mode*");
+		    cmds.add(optsCmd);
+		    ReplyParser fourthReplyParser =new ReplyParser() {
+	            public String getCurrentCmd() { return "OPTS"; }
+	            public void replyParser(Reply optsReply) throws IOException,
+	                    ServerException { 
+	                logger.debug("received OPTS cmd reply: " + optsReply);
+	            }
+	        };
+	        replyParserChain.add(fourthReplyParser);
+		}
+		
+		localCC.exchange(listingtask, threadAssignedName, cmds, replyParserChain, null);
         logger.debug("DLSGSIFTP user: "+realUserName[0]+ " login successful~!");
 	}
     

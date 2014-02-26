@@ -5,7 +5,9 @@ import java.util.Vector;
 import org.globus.ftp.FileInfo;
 import org.globus.ftp.exception.FTPReplyParseException;
 
+import stork.dls.client.DLSClient;
 import stork.dls.client.FTPClientEx;
+import stork.dls.stream.DLSListingTask;
 import stork.dls.stream.DLSStream;
 import stork.dls.stream.DLSStreamPool;
 import stork.dls.util.XMLString;
@@ -20,7 +22,7 @@ public class FTPStream extends DLSStream{
 	private FTPClientEx ftpc = null;	
 	
 	public FTPStream(String streamkey) {
-		super(false, streamkey);
+		super(streamkey);
 	}
 	final protected String DefaultPort(){
 		port = DEFAULT_FTP_PORT;
@@ -28,7 +30,8 @@ public class FTPStream extends DLSStream{
 		return realprotocol;
 	}
 		
-	final protected synchronized void Authenticate(String assignedThreadName, String path, String token) throws Exception {
+	final protected synchronized void Authenticate(final DLSListingTask listingytask, 
+	        String assignedThreadName, String path, String token) throws Exception {
 		if (null == username || username.isEmpty())
 			username = "anonymous";
 		if (null == password)
@@ -98,4 +101,5 @@ public class FTPStream extends DLSStream{
 			dls_StreamPool.streamList.add(e);
 		}
 	}
+
 }

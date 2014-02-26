@@ -8,6 +8,7 @@ import stork.dls.ad.Ad;
 import stork.dls.config.DLSConfig;
 import stork.dls.inmemcache.MemoryCache;
 import stork.dls.io.local.DBCache;
+import stork.dls.io.network.DLSFTPMetaChannel;
 import stork.dls.rest.RestInterface;
 
 public class DLSloader implements ServletContextListener{
@@ -23,6 +24,7 @@ public class DLSloader implements ServletContextListener{
 			MemoryCache.inMemoryCache_capacity = ad.getInt("conf.inMemoryCache_capacity", MemoryCache.inMemoryCache_capacity);
 			RestInterface.ip = ad.get("ip", RestInterface.ip);
 			RestInterface.hostname = ad.get("hostname", RestInterface.hostname);
+			DLSConfig.TCPNODELAY = ad.getBoolean("conf.TCP_NODELAY", DLSConfig.TCPNODELAY);
 			DLSConfig.DLS_CONCURRENCY_STREAM = ad.getInt("conf.DLS_CONCURRENCY_STREAM", DLSConfig.DLS_CONCURRENCY_STREAM);
 			DLSConfig.DLS_PIPE_CAPACITY = ad.getInt("conf.DLS_PIPE_CAPACITY", DLSConfig.DLS_PIPE_CAPACITY);
 		}catch (Exception ex){
