@@ -117,13 +117,29 @@ public class RestInterface {
 		final String passphrase = ad.get("passphrase");
 		final String proxyserver = ad.get("proxyserver");
 		final String proxy = ad.get("proxyCertificate");
-		final String requestType = ad.get("type");
-		
+		final String zone = ad.get("irodsZone");
+		final String resource = ad.get("irodsDefResource");
+		final String irodshost = ad.get("irodsHost");
+		final String irodsHomeDirectory = ad.get("irodsHomeDirectory");
+		//final String requestType = ad.get("type");
+		final String cacheSize = ad.get("cacheSize");
 		String result = null;
+        if(null != cacheSize){
+            Ad adResult = new Ad();
+            result = "Cache entries num: "+ Integer.toString(concurrentCache.getCacheEntriesNum()) + " of " + MemoryCache.inMemoryCache_capacity;
+            adResult.put(result);
+            result  = adResult.toJSON();
+            return Ad.parse(result);
+        }
+		
 		long threadID = Thread.currentThread().getId()%MAXIMUM_TICKET;
 		DLSLogTime logStart = new DLSLogTime();
 		DLSProxyInfo dlsproxy = DLSProxyInfo.createDLSProxy(proxyserver, account, passphrase);
-		DLSListingTask dlsfetchingTask = new DLSListingTask(threadID, uri, dlsproxy, forceRefresh, enablePrefetch, proxy);
+		DLSListingTask dlsfetchingTask = new DLSListingTask(threadID, uri, dlsproxy, forceRefresh, enablePrefetch, proxy, zone, resource);
+		if(null != irodshost){
+			dlsfetchingTask.setiRodsHost(irodshost);
+			dlsfetchingTask.setiRodsHome(irodsHomeDirectory);
+		}
 		result = concurrentCache.read(threadID, dlsfetchingTask, null);
 		/*
 		if(false == forceRefresh){

@@ -99,6 +99,11 @@ final public class MemoryCache {
 	public static int inMemoryCache_capacity = (1<<10);
 	private final HashMap<String, Sentinel> cacheSentinelMap = new HashMap<String, Sentinel>(inMemoryCache_capacity, inMemoryCache_loadFactor);
 	
+	public int getCacheEntriesNum(){
+	    return capacity_counter.getTicket();
+	}
+	
+	
 	public void inMemoryCache_CLeanUp(long threadID){
 		active_counter.waitTilZero();
 		while(true){

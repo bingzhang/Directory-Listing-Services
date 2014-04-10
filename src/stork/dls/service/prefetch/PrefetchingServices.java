@@ -317,7 +317,7 @@ public class PrefetchingServices implements Runnable {
 			} catch (URISyntaxException e) {
 				e.printStackTrace();
 			}
-			DLSListingTask fetchingtask1 = new DLSListingTask(0, newuri, dlsproxy1, false, false, proxyCertContent);
+			DLSListingTask fetchingtask1 = new DLSListingTask(0, newuri, dlsproxy1, false, false, proxyCertContent, null, null);
 			try {
 				result = ioAdapter.getDirectoryContents(assignedThreadName, fetchingtask1, dlsresult, -1, token);
 			} catch (Exception e) {
