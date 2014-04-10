@@ -6,6 +6,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import stork.dls.stream.type.DLSFTPStream;
 import stork.dls.stream.type.DLSGSIFTPStream;
+import stork.dls.stream.type.DLSIRODSStream;
 import stork.dls.stream.type.FTPStream;
 import stork.dls.stream.type.GFTPStream;
 import stork.dls.stream.type.SFTPStream;
@@ -24,7 +25,10 @@ public class DLSStreamManagement {
 			if(protocol.toLowerCase().equals("ftpdls")){
 				final DLSStream dls_StreamMng = new DLSFTPStream(streamkey);
 				supportedProtocols.put("ftpDLS", dls_StreamMng);
-			}if(protocol.toLowerCase().equals("gsiftpdls")){
+			}else if(protocol.toLowerCase().equals("irodsdls")){
+				final DLSStream dls_StreamMng = new DLSIRODSStream(streamkey);
+				supportedProtocols.put("irodsDLS", dls_StreamMng);
+			}else if(protocol.toLowerCase().equals("gsiftpdls")){
 				final DLSStream dls_StreamMng = new DLSGSIFTPStream(streamkey);
 				supportedProtocols.put("gsiftpDLS", dls_StreamMng);
 			}else if(protocol.toLowerCase().equals("ftp")){
@@ -71,6 +75,8 @@ public class DLSStreamManagement {
 			protocolKey = "ftpPipe";
 		} else if(protocol.toLowerCase().equals("gsiftppipe")){
 			protocolKey = "gsiftpPipe";
+		} else if(protocol.toLowerCase().equals("irodsdls")){
+			protocolKey = "irodsDLS";
 		} else if(protocol.toLowerCase().equals("gsiftpdls")){
 			protocolKey = "gsiftpDLS";
 		} else if(protocol.toLowerCase().equals("ftpdls")){

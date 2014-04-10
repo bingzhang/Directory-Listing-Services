@@ -13,6 +13,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import javax.annotation.concurrent.GuardedBy;
 
 import org.globus.ftp.FileInfo;
+import org.irods.jargon.core.pub.CollectionAndDataObjectListAndSearchAO;
 
 import stork.dls.client.DLSClient;
 import stork.dls.io.network.DLSFTPMetaChannel;
@@ -45,6 +46,7 @@ public abstract class DLSStream{
 	protected String token = null;
 	
 	protected DLSFTPMetaChannel localCC;
+	protected CollectionAndDataObjectListAndSearchAO actualCollection;
 	
 	protected final ReadWriteLock spinlock = new ReentrantReadWriteLock();
 	@GuardedBy("DLSStream.spinlock")
