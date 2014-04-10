@@ -24,6 +24,8 @@ import org.globus.ftp.exception.UnexpectedReplyCodeException;
 import org.globus.ftp.vanilla.Command;
 import org.globus.ftp.vanilla.Reply;
 import org.ietf.jgss.GSSCredential;
+import org.irods.jargon.core.pub.CollectionAndDataObjectListAndSearchAO;
+
 import stork.dls.io.network.DLSFTPMetaChannel;
 import stork.dls.io.network.DLSSimpleTransferReader;
 import stork.dls.io.network.ReplyParser;
@@ -96,6 +98,13 @@ public class DLSClient implements FTPMetaCmdFun {
         return null;
     }
 
+    public CollectionAndDataObjectListAndSearchAO authenticate(final String host, final int port,
+			final String userName, final String password,
+			final String homeDirectory, final String userZone,
+			final String defaultStorageResource) throws Exception {
+        return null;
+    }
+    
     /**
      * authentication without proxy
      * 
@@ -211,7 +220,13 @@ public class DLSClient implements FTPMetaCmdFun {
                 + socketBox.toString());
         return result;
     }
-
+	public Vector<FileInfo> list(
+            final DLSListingTask listingtask, 
+            final CollectionAndDataObjectListAndSearchAO actualCollection, 
+            final String threadAssignedName,
+            final String targetIrodsCollection) throws Exception{ 
+		return null;
+	}
     public Vector<FileInfo> list(
             final DLSListingTask listingtask, 
             final DLSFTPMetaChannel localCC, 
