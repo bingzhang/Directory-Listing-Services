@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Vector;
 import org.globus.ftp.FileInfo;
 import stork.dls.ad.Ad;
+import stork.dls.client.DLSGSIFTPClient;
 
 /**
  * 
@@ -63,6 +64,35 @@ public class DLSResult {
 		return XMLString.helpToScan(source);
 	}
 	
+	private static Attributes getFileAttr(FileInfo fileInfo){
+		Attributes attrs = new Attributes();
+		
+		String date = fileInfo.getDate();
+		if(null != date){
+			attrs.mdtm = date;
+		}
+		String time = fileInfo.getTime();
+		if(null != time){
+			attrs.mdtm +=" " + time;
+		}
+		
+		long size = fileInfo.getSize();
+    	if(0 < size){
+    		attrs.size = size;
+    	}
+    	attrs.owner = fileInfo.getOwner();
+    	attrs.group = fileInfo.getGroup();
+    	if(DLSGSIFTPClient.CONTROLCHANNEL_LISTING){
+    		attrs.perm  = fileInfo.getMode();
+    	}else{
+    		attrs.perm  = Integer.parseInt(fileInfo.getModeAsString());
+    	}
+        if(fileInfo.allCanRead() | fileInfo.groupCanRead()){
+        	attrs.index = true;
+        }
+        return attrs;
+	}
+	
 	private static Ad adEncode(final Vector<FileInfo> fileList, final Attributes attrs){
 		Ad main = new Ad();
 		for (FileInfo fileInfo : fileList) {
@@ -70,18 +100,28 @@ public class DLSResult {
 			if (fileInfo.isDirectory()){
 				if(rel_path.equals(".")){
 					String date = fileInfo.getDate();
+					if(null != date){
+						attrs.mdtm = date;
+					}
 					String time = fileInfo.getTime();
 					if(null != time){
-						attrs.mdtm = date + " " + time;
+						attrs.mdtm +=" " + time;
 					}
-					/*
+					
 					long size = fileInfo.getSize();
 	            	if(0 < size){
 	            		attrs.size = size;
-	            	}*/
+	            	}
 	            	attrs.owner = fileInfo.getOwner();
 	            	attrs.group = fileInfo.getGroup();
-	            	attrs.perm  = Integer.parseInt(fileInfo.getModeAsString());
+	            	attrs.perm  = fileInfo.getMode();// octal
+	            	/*
+	            	if(DLSGSIFTPClient.CONTROLCHANNEL_LISTING){
+	            		attrs.perm  = fileInfo.getMode();
+	            	}else{
+	            		attrs.perm  = Integer.parseInt(fileInfo.getModeAsString());
+	            	}*/
+	            	
 	                if(fileInfo.allCanRead() | fileInfo.groupCanRead()){
 	                	attrs.index = true;
 	                }
@@ -91,15 +131,20 @@ public class DLSResult {
 					continue;
 				}
 			}
-			String tmp = fileInfo.toString();
 			Ad ad = new Ad("name", rel_path);
 			String date = fileInfo.getDate();
+			if(null != date){
+				attrs.mdtm = date;
+			}
 			String time = fileInfo.getTime();
 			if(null != time){
-				ad.put("mdtm", date +" "+time);
+				attrs.mdtm +=" " + time;
 			}
+			ad.put("mdtm", attrs.mdtm);
+			
             if (fileInfo.isDirectory()){
             	ad.put("dir", true);
+            	ad.put("size", 4096);
             }else{
             	long size = fileInfo.getSize();
             	if(0 < size){
@@ -110,9 +155,17 @@ public class DLSResult {
             //ad.put("perm", fileInfo.getMode());
             ad.put("owner", fileInfo.getOwner());
             ad.put("group", fileInfo.getGroup());
-            ad.put("perm", Integer.parseInt(fileInfo.getModeAsString()) );//octal decimal
-            if(fileInfo.allCanRead() | fileInfo.groupCanRead()){
-            	ad.put("index", true);
+            ad.put("perm", fileInfo.getMode() );//octal
+            /*
+        	if(DLSGSIFTPClient.CONTROLCHANNEL_LISTING){
+        		ad.put("perm", fileInfo.getMode() );//octal
+        	}else{
+        		ad.put("perm", Integer.parseInt(fileInfo.getModeAsString()) );//octal to decimal
+        	}*/
+            
+            //if(fileInfo.allCanRead() | fileInfo.groupCanRead()){
+            if(fileInfo.allCanRead()){
+            	ad.put("indx", true);
             }
             main.put(ad);
         }
@@ -155,7 +208,7 @@ public class DLSResult {
             		continue;
             	}
     			//permission checking
-    			if(fileInfo.allCanRead() || fileInfo.groupCanRead()){
+    			if(fileInfo.allCanRead()/* || fileInfo.groupCanRead()*/){
     				dlsresult.subdirPathInfo.add(rel_path);	
     				//System.out.println(rel_path);
     			}
@@ -175,18 +228,27 @@ public class DLSResult {
         	return null;
         }
         Ad ad = new Ad("name", dlsresult.root);
-        Attributes attrs = new Attributes();
+        Attributes attrs = null;
         ad.put("host", dlsresult.host);
-        Ad body = adEncode(fileList, attrs);
+        FileInfo fileInfo = fileList.get(0);
+        Ad body = null;
+        if(1 == fileList.size() && fileInfo.isFile()){
+        	attrs = getFileAttr(fileInfo);
+        	ad.put("file", true);
+        }else{
+        	attrs = new Attributes();
+        	body = adEncode(fileList, attrs);
+        	ad.put("dir", true);
+
+        }
         ad.put("mdtm", attrs.mdtm);
-        //ad.put("size", attrs.size);
-        ad.put("dir", true);
+        ad.put("size", attrs.size);
         ad.put("owner", attrs.owner);
         ad.put("group", attrs.group);
         ad.put("perm", attrs.perm);
         ad.put("index", attrs.index);
-                
-        ad.put("files", body);
+    	ad.put("files", body);                
+        
         dlsresult.adString = ad.toString(false);
         if(true == dlsresult.preparePrefetchingList){
         	preparePrefetchingList(fileList, dlsresult);

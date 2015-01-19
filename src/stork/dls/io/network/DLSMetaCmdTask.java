@@ -42,6 +42,8 @@ public class DLSMetaCmdTask{
 	private int waitOn = 0;
 	private int wakeUp = 0;
 	private int writeBacksNum = 0;
+	private MetaChannel metachannel = null;
+    private int repliesNum;
 	
 	
 	public DLSListingTask getListingTask(){
@@ -58,7 +60,9 @@ public class DLSMetaCmdTask{
 	
 	DLSMetaCmdTask(DLSListingTask listingtask, final String assignedThreadName, 
 	        final List<Command> cmds, final List<ReplyParser> replyParserChain, 
-	        final List<LocalReply> writeBacks){
+	        final List<LocalReply> writeBacks, final MetaChannel channel){
+	    this.repliesNum = 0;
+	    this.metachannel = channel;
 	    this.listingtask = listingtask;
 		this.assignedThreadName = assignedThreadName;
 		this.cmds = cmds;
@@ -121,7 +125,7 @@ public class DLSMetaCmdTask{
 		return reply;
 	}
 	
-	public synchronized boolean wakeUpInplace(Reply reply, boolean isException){
+    public synchronized boolean wakeUpInplace(Reply reply, boolean isException){
         if(isException){
             this.isException = isException;
             logger.debug("PipeEvent: thread = " + wt.getName() + " got exception~" + reply);
@@ -146,7 +150,7 @@ public class DLSMetaCmdTask{
         }
         return ret;
     }
-	
+    
 	public synchronized boolean wakeUp(Reply reply, boolean isException){
         if(isException){
             this.isException = isException;
@@ -156,12 +160,29 @@ public class DLSMetaCmdTask{
         }
 	    boolean ret = wakeUp < this.cmdsNum;
 		if(ret){
+		    
+            /*
+             * aimming to solve the retransmit exception bug.
+             * 
+             * to check whether this metatask finished sending all cmds or not
+             * if done, then remove it from wakupQueue first, then do wakeup,
+             * this is very important, because we do not do synchronization between data channels and control channel
+             * So, when we begin to read from data channel, we must make sure the metatask is remove from wakupQueue,
+             * then later any data channel exception can be migrate into the same stream (same wakupQueue) possibly. 
+             * This consideration prevents the duplicates metatasks in the same wakupQueue.
+             * */
+	        replies.offer(reply);
+	        repliesNum ++;
+            if(repliesNum == this.cmdsNum){
+                this.metachannel.pollWakupQueue();
+            }
+		    
 			value++;
 			if (waitCount > notify) {
 				notify++;
 				notify();
 			}
-			replies.add(reply);
+
 			wakeUp ++;
 			ret = wakeUp < this.cmdsNum;
 		}

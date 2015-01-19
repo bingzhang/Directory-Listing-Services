@@ -29,6 +29,7 @@ import stork.dls.client.DLSClient;
 import stork.dls.config.DLSConfig;
 import stork.dls.service.prefetch.DLSThreadsManager;
 import stork.dls.service.prefetch.WorkerThread;
+import stork.dls.stream.DLSIOAdapter;
 import stork.dls.stream.DLSListingTask;
 import stork.dls.stream.DLSStream;
 import stork.dls.stream.DLSStream.CHANNEL_STATE;
@@ -57,6 +58,7 @@ import stork.dls.util.DLSLogTime;
 public class MetaChannel {
 	public static boolean DEBUG_PRINT;
 	private static DLSLog logger = DLSLog.getLog(MetaChannel.class.getName());
+	protected DLSStream attachedStream = null;
 	protected HostPort hp = null;
 	protected SocketBox socketBox;
 	protected final DataChannelFactory dataChannelFactory;
@@ -78,6 +80,15 @@ public class MetaChannel {
 	protected MetaChannelMonitor monitor;
 	protected final LinkedBlockingQueue<DLSMetaCmdTask> wakupQueue;
 
+	public void pollWakupQueue(){
+        if(wakupQueue.size() > 0){
+            DLSMetaCmdTask activeCmdTask = wakupQueue.poll();
+            //if(activeCmdTask.isComplete){
+            logger.debug("<<-----CMDS: " + activeCmdTask +" complete, removed~! ----->>CMD END\n"); 
+            //}
+        }
+	}
+	
 	protected MetaChannel(){
 	    this.ftpIn = null;
 	    this.ftpOut = null;
@@ -95,8 +106,8 @@ public class MetaChannel {
 	
 	public MetaChannel(DLSStream stream, HostPort hp, SocketBox socketBox, 
 			BufferedReader ftpIn, OutputStream ftpOut)  throws IOException, ServerException{
-        
-	    logger.debug("hostport: " + hp.getHost() + " " + hp.getPort());
+	    //logger.debug("hostport: " + hp.getHost() + " " + hp.getPort());
+	    this.attachedStream = stream;
         spinlock = stream.getspinlock();
 	    this.hp = hp;
 	    this.socketBox = socketBox;
@@ -116,8 +127,13 @@ public class MetaChannel {
         }
     
     private void writeCmd(String msg) throws IOException {
-        ftpOut.write(msg.getBytes());
-        ftpOut.flush();
+        try{
+            ftpOut.write(msg.getBytes());
+            ftpOut.flush();
+        }catch (Exception ex){
+            ex.printStackTrace();
+            throw new IOException(ex.toString());
+        }
     }
     
 	private synchronized void writeCmdGreedy(DLSMetaCmdTask metaTask) 
@@ -125,18 +141,18 @@ public class MetaChannel {
 				ServerException, IOException{
         wakupQueue.offer(metaTask);
         {
-            //System.out.println("Synchronized write cmds: " + metaTask);
+            logger.debug("Synchronized write cmds: " + metaTask);
         }
 		List<Command> cmds = metaTask.getCmds();
 		Iterator<Command> it = cmds.iterator();
 		while(it.hasNext()) {
-			Command cmd = it.next();
+		    Command cmd = it.next();
 			write(cmd);
-			//DLSLogTime curtime = new DLSLogTime();
+			DLSLogTime curtime = new DLSLogTime();
 			//System.out.println("time: " + curtime.toString() + " SEND "+ cmd.toString());
-			//logger.debug(metaTask.getAssignedThreadName() + " SEND "+ cmd.toString());
-			//logger.debug("time: " + curtime.toString() + " SEND "+ cmd.toString());
+			logger.debug(metaTask.getAssignedThreadName() + "time: " + curtime.toString() + " SEND "+ cmd.toString());
 		}
+		logger.debug("Synchronized write cmds: completed");
 	}
 
 	protected List<Reply> handleReply(DLSMetaCmdTask metaTask)
@@ -158,8 +174,14 @@ public class MetaChannel {
 	               throw new IOException("how n why?");
 	           }
 	           ReplyParser oneReplyParser = replyParser.next();
+	           if(DEBUG_PRINT){
+    	           String shortreply = reply.toString();
+    	           if(shortreply.length() > 40){
+    	               shortreply = shortreply.substring(0, 40);
+    	           }
+    	           logger.debug("["+ oneReplyParser.getCurrentCmd()+ "->" + shortreply+ "]");
+	           }
 	           oneReplyParser.replyParser(reply);
-	           logger.debug(oneReplyParser.getCurrentCmd() + " Recv: {\n"+ reply.toString());
 	           replies.add(reply);
 	       }	    
 	    return replies;
@@ -179,22 +201,36 @@ public class MetaChannel {
 	    * strict sequential. And can not interleave.
 	    */
 	   while(true){
+	       //logger.debug(spinlock + " going to do readLock().tryLock()");
 	       if(spinlock.readLock().tryLock()){
+	           //logger.debug(spinlock + " finished to do readLock().tryLock()");
+	    	   //Thread activeT = Thread.currentThread();
+	    	   //listingtask.setAssignedThread(activeT);
 	           try{
 	               if(true != this.monitor.isTermintate()){
-    	               metaTask = new DLSMetaCmdTask(listingtask, assignedThreadName, cmds, replyParserChain, writeBacks);
+    	               metaTask = new DLSMetaCmdTask(listingtask, assignedThreadName, cmds, replyParserChain, writeBacks, this);
     	               //synchronized write into the shared queue.
     	               writeCmdGreedy(metaTask);
 	               }else{
+	                   if(this.monitor.isTobeRevived(false)){
+	                       //flipping TobeRevived
+	                       System.out.println("1st to observe CC broken");
+	                       DLSClient dummyclient = listingtask.getClient();
+	                       dummyclient.channelstate = CHANNEL_STATE.CC_REVIVE;
+	                       throw new IOException();	                       
+	                   }
 	                   /**
 	                    * already observed CC broken
 	                    */
+	                   System.out.println("already observed CC broken");
 	                   DLSClient dummyclient = listingtask.getClient();
 	                   dummyclient.channelstate = CHANNEL_STATE.DC_RETRANSMIT;
 	                   throw new IOException();
 	               }
 	           }finally{
+	               //logger.debug(spinlock + " going to do readLock().unlock()");
 	               spinlock.readLock().unlock();
+	               //logger.debug(spinlock + " finished to do readLock().unlock()");
 	           }
 	           break;
 	       }
@@ -227,6 +263,8 @@ public class MetaChannel {
 	//TransferSinkThread
 	protected class MetaChannelMonitor_Default implements MetaChannelMonitor{
 	    private volatile boolean monitoringTerminate;
+	    //@Guardby{spinlock}
+	    public volatile boolean cc_need_revive = false;
 	    private final WorkerThread wt;
 	    private final String threadGroupID;
 	    
@@ -258,11 +296,15 @@ public class MetaChannel {
 						try {
 							reply = read();
 						} catch (ServerException e) {
+						    DLSLogTime time = new DLSLogTime();
+						    logger.debug("MetaChannel exception: ServerException. " +time + reply);
 							//e.printStackTrace();
                             while(true){
                                 if(spinlock.writeLock().tryLock()){
                                     try{
-                                        monitoringTerminate = true;
+                                        //monitoringTerminate = true;
+                                        isActiveCmds = false;
+                                        channelTerminate(reply);
                                     }finally{
                                         spinlock.writeLock().unlock();
                                     }
@@ -272,11 +314,15 @@ public class MetaChannel {
 						    break;
 							//throw new Exception(e.toString());
 						} catch (FTPReplyParseException e) {
+						    DLSLogTime time = new DLSLogTime();
+						    System.out.println("MetaChannel exception: FTPReplyParseException. " +time+ reply);
 							//e.printStackTrace();
                             while(true){
                                 if(spinlock.writeLock().tryLock()){
                                     try{
-                                        monitoringTerminate = true;
+                                        //monitoringTerminate = true;
+                                        isActiveCmds = false;
+                                        channelTerminate(reply);
                                     }finally{
                                         spinlock.writeLock().unlock();
                                     }
@@ -286,13 +332,24 @@ public class MetaChannel {
 						    break;
 							//throw new Exception(e.toString());
 						} catch (IOException e) {
-							//e.printStackTrace();
+							e.printStackTrace();
+							DLSLogTime time = new DLSLogTime();
+						    logger.debug("MetaChannel exception: IOException" + time+reply);
+						    //same as the timeout exception.
+						    // server close this transferring after some period of time,
+						    //may be longer or short time period.
                             while(true){
+                                logger.debug(spinlock + " going to do writeLock().tryLock()");
                                 if(spinlock.writeLock().tryLock()){
+                                    logger.debug(spinlock + " finished to do writeLock().tryLock()");
                                     try{
-                                        monitoringTerminate = true;
+                                        //monitoringTerminate = true;
+                                        isActiveCmds = false;
+                                        channelTerminate(reply);
                                     }finally{
+                                        logger.debug(spinlock + " going to do writeLock().unlock()");
                                         spinlock.writeLock().unlock();
+                                        logger.debug(spinlock + " finished to do writeLock().unlock()");
                                     }
                                     break;
                                 }
@@ -300,7 +357,10 @@ public class MetaChannel {
 						    break;
 							//throw new Exception(e.toString());
 						}
+						//----------end of all catches-------------------//
+                        //----------end of all catches-------------------//
 			            if (reply == null) {
+			                System.out.println("MetaChannel exception: reply is null");
 			            	break;//how why?
 			            }
 			            /**
@@ -327,9 +387,13 @@ public class MetaChannel {
 			            if(Reply.isTransientNegativeCompletion(reply)){
 			            	//421 Idle Timeout: closing control connection.
 			            	if(421 == reply.getCode()){
+			            	    System.out.println("MetaChannel exception: 421 == reply.getCode()");
+                                isActiveCmds = false;
+                                channelTerminate(reply);
+			            	    /*
 			            	    synchronized(wakupQueue){
 			            	        monitoringTerminate = true;
-			            	    }
+			            	    }*/
 			            		break;
 			            	}
 			            }
@@ -352,35 +416,45 @@ public class MetaChannel {
 			    			     * this case could be: permission deny, wrong listing path
 			    			     * So, set metaTask.isException is true.
 			    			     */
+			    			    System.out.println("MetaChannel exception:" + reply);
 			    				activeCmdTask = wakupQueue.peek();
-					            isActiveCmds = activeCmdTask.wakeUp(reply, true);
-					            activeCmdTask.execute();
-					            activeCmdTask.getListingTask().getClient().channelstate = CHANNEL_STATE.DC_IGNORE;
+			    				if(null != activeCmdTask){
+				    				activeCmdTask.getListingTask().getClient().channelstate = CHANNEL_STATE.DC_IGNORE;
+						            isActiveCmds = activeCmdTask.wakeUp(reply, true);
+						            //activeCmdTask.execute();
+			    				}
 			    			}
 			            }else{
 				            activeCmdTask = wakupQueue.peek();
+				            if(null == activeCmdTask) break;
 				            isActiveCmds = activeCmdTask.wakeUp(reply, false);
-				            activeCmdTask.execute();
+				            boolean nottrue = activeCmdTask.execute();
+				            if(isActiveCmds == true){
+				                isActiveCmds = !nottrue;
+				            }
 			            }
-			            
 		        	}while(isActiveCmds);
+		        	
 		        	if(true == monitoringTerminate){
 		        	    /**
 		        	     * channel is broken
 		        	     * loop wakupQueue, set exception flag to each task
 		        	     */
 		        	    channelTerminate(reply);
-		        	}else{
+		        	}
+                    /*
+		        	else{
 		        		if(wakupQueue.size() > 0){
 			        		activeCmdTask = wakupQueue.poll();
 				        	if(activeCmdTask.isComplete){
-				        		logger.debug("<<-----CMDS: " + activeCmdTask +" removed~! ----->>CMD END\n");	
+				        		logger.debug("<<-----CMDS: " + activeCmdTask +" complete, removed~! ----->>CMD END\n");	
 				        	}else if(activeCmdTask.isException){
-				        		logger.debug("<<-----CMDS: " + activeCmdTask +" got exception, need retransmit~! ----->>CMD END\n");
+				        		logger.debug("<<-----CMDS: " + activeCmdTask +" got exception, removed~! ----->>CMD END\n");
 				        	}
 		        		}
-		        	}	        	
-		        }
+		        	}*/
+		        	
+		        }//while(!monitoringTerminate) {
 	        }catch (Exception ex){
 	        	ex.printStackTrace();
 	        }
@@ -397,19 +471,39 @@ public class MetaChannel {
 	   public void channelTerminate(Reply reply) {
             while(true){
                 if(spinlock.writeLock().tryLock()){
-                	if(true == monitoringTerminate){
-                	    spinlock.writeLock().unlock();
-                	    return;
-                	}
-                    //2nd.
-                	monitoringTerminate = true;
                     try{
+                    	if(true == monitoringTerminate){
+                    	    //spinlock.writeLock().unlock();
+                    	    return;
+                    	}
+                    	DLSLogTime time = new DLSLogTime();
+                    	System.out.println("REPLY cause excep: " + time + reply);
+                        //2nd.
+                        //extra check condition: timeout flag
+                    	cc_need_revive = true;
+                    	monitoringTerminate = true;
+                        if(wakupQueue.size() > 1){
+                            System.out.println("wakupQueue has problem");
+                        }
                         DLSMetaCmdTask task = wakupQueue.peek();
+                        /*self close, set timeout flag inside this stream, */
+                        if(null == task){
+                            //attachedStream.getStreamPool().MigrationStream(null, null, null, attachedStream, 0);
+                            System.out.println("close(true)");
+                            try {
+                                attachedStream.getCC().close(true);
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                            //can not close cc socket, otherwise can not revive it again.
+                            return;
+                        }
                         DLSClient dummyclient = task.getListingTask().getClient();
                         //1st.
-                        DLSStream stream = dummyclient.getStream(); 
-                        stream.isAvailable = false;
+                        DLSStream stream = dummyclient.getStream();
                         stream.value = 0;
+                        stream.isAvailable = false;
+                        
                         //3rd.
                         dummyclient.channelstate = CHANNEL_STATE.CC_REVIVE;
                         System.out.println("Task: " + task + " caused cc: " + dummyclient.getStream().streamID + " broken to revive!" + " cc stat: " + dummyclient.channelstate + " client: " + dummyclient);
@@ -445,6 +539,11 @@ public class MetaChannel {
 
         public boolean isTermintate() {
             return this.monitoringTerminate;
+        }
+        @Override
+        public boolean isTobeRevived(boolean flip) {
+            this.cc_need_revive = this.cc_need_revive^flip;
+            return this.cc_need_revive;
         }
 	}
 

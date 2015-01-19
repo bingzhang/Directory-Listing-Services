@@ -25,9 +25,8 @@ public class DebugConfig {
 	 * for debug
 	 */
 	public static void DebugPrint(){
-	    MetaChannel_State.DEBUG_PRINT = false;
-		MetaChannel.DEBUG_PRINT = false;//true;
-		MetaChannel_State.DEBUG_PRINT = false;
+		MetaChannel.DEBUG_PRINT = true;//true;
+		MetaChannel_State.DEBUG_PRINT = true;
 		DLSMetaCmdTask.DEBUG_PRINT = false;//true;
 		
 		DLSStreamPool.DEBUG_PRINT = false;//false;true;

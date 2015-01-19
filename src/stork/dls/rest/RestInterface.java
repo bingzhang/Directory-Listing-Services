@@ -1,5 +1,7 @@
 package stork.dls.rest;
 
+import java.io.File;
+import java.io.FileWriter;
 import java.net.*;
 import java.util.*;
 import java.util.Map.Entry;
@@ -14,6 +16,7 @@ import com.sun.jersey.multipart.*;
 
 import stork.dls.ad.Ad;
 import stork.dls.inmemcache.MemoryCache;
+import stork.dls.io.local.DBCache;
 import stork.dls.service.prefetch.DLSThreadsManager;
 import stork.dls.stream.DLSIOAdapter;
 import stork.dls.stream.DLSListingTask;
@@ -31,7 +34,10 @@ public class RestInterface {
 	private static double user100[] = new double[100];
 	private static double user1k[] = new double[1000];
 	
-	private final static boolean enableLog = true;
+    private final boolean enableDOMount = true;
+    private final Boolean EnableFtpSitesRoot = new Boolean(true);
+	
+	private final static boolean enableLog = false;
 	private static MemoryCache concurrentCache;
 	public static String ip = "127.0.0.1";
 	public static String hostname = "localhost";
@@ -74,6 +80,13 @@ public class RestInterface {
 		return response(mvMapToAd(ui.getQueryParameters()));
 	}
 
+	@POST
+	@Path("/list")
+	@Consumes("multipart/form-data")
+	public Response handleMultipartPost(FormDataMultiPart form) {
+		return response(formPartsToAd(form));
+	}
+	
 	// Handles POST requests with a URL encoded request body.
 	@POST
 	@Path("/list")
@@ -81,14 +94,14 @@ public class RestInterface {
 	public Response handleFormPost(MultivaluedMap<String, String> form) {
 		return response(mvMapToAd(form));
 	}
-	
+	/*
 	// Handles POST requests with a multipart request body.
 	@POST
 	@Path("/list")
 	@Consumes("multipart/form-data")
 	public Response handleMultipartPost(FormDataMultiPart form) {
 		return response(formPartsToAd(form));
-	}
+	}*/
 	
 	// Wrapper handler which intercepts exceptions and returns responses as JSON.
 	private Response response(Ad ad) {
@@ -98,7 +111,7 @@ public class RestInterface {
 			rb.header("Content-Length", b.length);
 			return rb.build();
 		} catch (Exception e) {
-			e.printStackTrace();
+			//e.printStackTrace();
 			String m = e.getMessage();
 			Ad err = new Ad("error", (m != null) ? m : "(unknown error)");
 			return Response.serverError().entity(err.toJSON()).build();
@@ -107,10 +120,37 @@ public class RestInterface {
 
 	// The one that handles the real response. Feel free to throw exceptions anywhere.
 	private Ad responseInner(Ad ad) throws Exception {
+        if(enableDOMount){
+            final boolean ismount = ad.getBoolean("domount");
+            if(ismount){
+                Ad filead = null;
+                synchronized(EnableFtpSitesRoot){
+                    File file = new File(DBCache.BDB_PATH+"/ftpsites");
+                    filead = file.exists() ? Ad.parse(file) : null;
+                }
+                return filead;
+            }
+        }
+	    
+	    
+	    
 		if (!ad.has("URI")){
 			throw new Exception("URI parameter is missing from request");
 		}
-		final URI uri = URI.create(ad.get("URI"));
+		URI uri = URI.create(ad.get("URI"));
+		String tmp1 = uri.getScheme();
+		uri = uri.normalize();
+		//String tmp1 = url.getProtocol();
+		String tmp2 = uri.getHost();
+		String tmp3 = uri.getPath();
+		if(null != tmp2){
+		    uri = new URI(tmp1+ "://" + tmp2+tmp3);
+		    //System.out.println( tmp1+ "://" + tmp2+tmp3);
+		}else{
+		    uri = new URI(tmp1+ ":/" + tmp3);
+		    //System.out.println(tmp1+ ":/" + tmp3);
+		}
+		
 		final boolean forceRefresh = ad.getBoolean("forceRefresh");
 		final boolean enablePrefetch = ad.getBoolean("enablePrefetch");
 		final String account = ad.get("account");
@@ -134,7 +174,10 @@ public class RestInterface {
 		
 		long threadID = Thread.currentThread().getId()%MAXIMUM_TICKET;
 		DLSLogTime logStart = new DLSLogTime();
-		DLSProxyInfo dlsproxy = DLSProxyInfo.createDLSProxy(proxyserver, account, passphrase);
+		DLSProxyInfo dlsproxy = null;
+		if(null == proxy){
+		    dlsproxy = DLSProxyInfo.createDLSProxy(proxyserver, account, passphrase);
+		}
 		DLSListingTask dlsfetchingTask = new DLSListingTask(threadID, uri, dlsproxy, forceRefresh, enablePrefetch, proxy, zone, resource);
 		if(null != irodshost){
 			dlsfetchingTask.setiRodsHost(irodshost);
@@ -227,8 +270,41 @@ public class RestInterface {
 			System.out.println(dlsLogStr);
 		}
 		
-		if (null == result)
+		if (null == result){
 			throw new Exception("null returned from lower layer (unknown error)");
+		}else if(enableDOMount){
+            if(uri.getScheme().equals("ftp") && tmp3.equals("/")){
+                String host = uri.getHost();
+                host = host.toLowerCase();
+                synchronized(EnableFtpSitesRoot){
+                    try {
+                        File file = new File(DBCache.BDB_PATH+"/ftpsites");
+                        Ad filead = file.exists() ? Ad.parse(file) : new Ad("name", "domount").put("dir", true).put("size", 4096).put("perm", 755).put("owner", "dls").put("group", "didclab").put("files", new Ad());
+                        Ad files = filead.getAd("files", new Ad());
+                        filead.put("files", files);
+
+                        boolean existed = false;
+                        for(Ad cursor: filead.getAds("files")){
+                            if(cursor.get("name", "").equals(host)){
+                                existed = true; break;
+                            }
+                        }
+                        if(!existed){
+                            files.put(new Ad("name", host).put("dir", true).put("size", 4096).put("perm", 755).put("owner", "ftp").put("group", "ftp"));
+                        }
+                        filead.put("files", files);
+                        FileWriter writer = new FileWriter(DBCache.BDB_PATH+"/ftpsites");
+                        writer.write(filead.toJSON());
+                        writer.close();
+
+                    } catch (Exception x) {
+                        //x.printStackTrace();
+                        System.err.println(x);
+                    }
+                }
+            }
+        }
+
 		return Ad.parse(result);
 	}
 	

@@ -44,7 +44,7 @@ public class DLSStreamManagement {
 		}
 	}	
 	private HashMap<String, DLSManager> inMemoryStreamsMap = new HashMap<String, DLSManager>();
-	
+
 	public DLSStream allocate_Stream(DLSListingTask listingtask, DLSProxyInfo dlsproxy, String proxyCertContent, String token) throws Exception{
 	    URI uri = listingtask.getUri();
 		int port = uri.getPort();

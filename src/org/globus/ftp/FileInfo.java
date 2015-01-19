@@ -123,6 +123,8 @@ public class FileInfo {
                     mode += 1 << (9 - i);
                 }
             }
+            String octal = Integer.toOctalString(mode);
+            mode = Integer.parseInt(octal);// convert into octal            
         } catch (IndexOutOfBoundsException e) {
             throw new FTPException(FTPException.UNSPECIFIED,
                                    "Could not parse access permission bits");
@@ -207,6 +209,10 @@ public class FileInfo {
     }
     
     // --------------------------------
+    
+    public void setOwner(String owner){
+    	this.owner = owner;
+    }
     
     /**
      * Sets the file size.
@@ -343,6 +349,10 @@ public class FileInfo {
       return mode;
     }
 
+    public void setMode(int mode) {
+        this.mode = mode;
+      }
+    
     public String getModeAsString() {
       StringBuffer modeStr = new StringBuffer();
       for(int j=2;j>=0;j--) {
@@ -357,10 +367,15 @@ public class FileInfo {
       return modeStr.toString();
     }
 
+    public void setUserCanRead(){
+    	mode += 1 << (8);
+    }
     public boolean userCanRead() {
       return ((mode & (1 << 8)) != 0);
     }
-
+    public void setUserCanWrite(){
+    	mode += 1 << (7);
+    }
     public boolean userCanWrite() {
       return ((mode & (1 << 7)) != 0);
     }

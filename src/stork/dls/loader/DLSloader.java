@@ -8,7 +8,6 @@ import stork.dls.ad.Ad;
 import stork.dls.config.DLSConfig;
 import stork.dls.inmemcache.MemoryCache;
 import stork.dls.io.local.DBCache;
-import stork.dls.io.network.DLSFTPMetaChannel;
 import stork.dls.rest.RestInterface;
 
 public class DLSloader implements ServletContextListener{
@@ -24,15 +23,24 @@ public class DLSloader implements ServletContextListener{
 			MemoryCache.inMemoryCache_capacity = ad.getInt("conf.inMemoryCache_capacity", MemoryCache.inMemoryCache_capacity);
 			RestInterface.ip = ad.get("ip", RestInterface.ip);
 			RestInterface.hostname = ad.get("hostname", RestInterface.hostname);
+			DLSConfig.CC_LISTING = ad.getBoolean("conf.CC_LISTING", DLSConfig.CC_LISTING);
 			DLSConfig.TCPNODELAY = ad.getBoolean("conf.TCP_NODELAY", DLSConfig.TCPNODELAY);
 			DLSConfig.DLS_CONCURRENCY_STREAM = ad.getInt("conf.DLS_CONCURRENCY_STREAM", DLSConfig.DLS_CONCURRENCY_STREAM);
 			DLSConfig.DLS_PIPE_CAPACITY = ad.getInt("conf.DLS_PIPE_CAPACITY", DLSConfig.DLS_PIPE_CAPACITY);
+			final String env = ad.get("replica.env", "env");
+			final String nodeName = ad.get("replica.nodeName", "nodeName");
+			final String nodeHost = ad.get("replica.nodeHost", "nodeHost");
+			final String helperHost = ad.get("replica.helperHost", "helperHost");			
+			//String[] argv = ;
+			//ReplicaStub replicastub = new ReplicaStub();
+			
 		}catch (Exception ex){
 			ex.printStackTrace();
 			System.out.println("fail to open DLS.conf ~!");
 		}
 		
 		System.out.println("{{ DLS on: " + RestInterface.ip + " " + RestInterface.hostname );
+		System.out.println("system listing on control channel: " + DLSConfig.CC_LISTING);
 		System.out.println("dls.conf.BDB_PATH: " + DBCache.BDB_PATH);
 		System.out.println("MemoryCache.inMemoryCache_capacity: " + MemoryCache.inMemoryCache_capacity);
 		System.out.println("DLSConfig.DLS_CONCURRENCY_STREAM: " + DLSConfig.DLS_CONCURRENCY_STREAM);

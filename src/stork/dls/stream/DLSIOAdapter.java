@@ -5,6 +5,7 @@ import javax.annotation.concurrent.GuardedBy;
 
 import stork.dls.client.DLSClient;
 import stork.dls.io.local.DBCache;
+import stork.dls.stream.DLSStream.CHANNEL_STATE;
 import stork.dls.util.DLSResult;
 
 /**
@@ -25,7 +26,7 @@ public class DLSIOAdapter {
 	private FETCH_PREFETCH doFetching = FETCH_PREFETCH.FETCH;
 	private static DBCache db_cache;
 	private boolean isNetwork = false;
-	private static DLSStreamManagement dls_Stream_management;
+	public static DLSStreamManagement dls_Stream_management;
 	
 	public DLSIOAdapter(){
 		doFetching = FETCH_PREFETCH.FETCH;
@@ -133,11 +134,12 @@ public class DLSIOAdapter {
                 listingtask.assignedStream = StreamMgn.getAvailableStream(/*extraInfo+*/assignedThreadName, path, doFetching);
                 DLSClient dummy = listingtask.assignedStream.createClient();
                 listingtask.bindClient(dummy);
+                /*
                 if(null != listingtask.assignedStream){
                     System.out.println(assignedThreadName + " path = "+path+"; with activeindex = " + listingtask.assignedStream.streamID);
                 }else{
                     System.out.println(assignedThreadName + " path = " +path + "trying getAvailableStream" );
-                }
+                }*/
             }
             
             while(true){
@@ -151,18 +153,28 @@ public class DLSIOAdapter {
     	                    listingtask.assignedStream, listingtask.assignedStream.streamID);
     	            if(null == listingtask.assignedStream){
     	                break;
+    	            }else{
+    	                boolean reservable = listingtask.assignedStream.reserveValue();
+    	                if(!reservable){
+    	                    listingtask.assignedStream = null;
+    	                    break;
+    	                }
     	            }
     	        }
             }
+            DLSClient proxyclient = listingtask.getClient();
+            if(CHANNEL_STATE.DC_IGNORE ==proxyclient.channelstate){
+                break;
+            }
 		}while(null == listingtask.assignedStream);
 		StreamMgn.releaseThisStream(listingtask.assignedStream, /*extraInfo+*/assignedThreadName, path, listingtask.assignedStream.streamID);
-		System.out.println(assignedThreadName + " finish; path = "+path+"; with activeindex = " + listingtask.assignedStream.streamID);
 		isNetwork = true;
 		if(null != result){
 			String adstring = dlsresult.getAdString();
 			db_cache.put(uri.getHost(), path, adstring);
 		}else{
 			//result = NOSUCHEXIST.toString();
+		    System.out.println(assignedThreadName + " finish; path = "+path+"; with activeindex = " + listingtask.assignedStream.streamID);
 			result = null;
 		}
 		return result;

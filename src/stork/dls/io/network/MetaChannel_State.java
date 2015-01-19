@@ -40,7 +40,7 @@ import stork.dls.util.DLSLogTime;
  *
  */
 public class MetaChannel_State extends MetaChannel{
-	public static boolean DEBUG_PRINT;
+	public static boolean DEBUG_PRINT = false;
 	private static DLSLog logger = DLSLog.getLog(MetaChannel_State.class.getName());
 	
 	/**
@@ -80,11 +80,7 @@ public class MetaChannel_State extends MetaChannel{
 	               exceptionSubject = exceptionSubject + reply;
 	               throw new IOException(exceptionSubject);
 	           }
-	           boolean doublecheck = replyParser.hasNext();
-	           if(false == doublecheck){
-	               System.out.println("how n why?");
-	               throw new IOException("how n why?");
-	           }
+	           
 	           switch(reply.getCategory()){
 	           case Reply.POSITIVE_PRELIMINARY:
 	           {
@@ -103,6 +99,22 @@ public class MetaChannel_State extends MetaChannel{
 	           default:
 	        	   oneReplyParser = replyParser.next();
 	           }
+	           
+	           if(DEBUG_PRINT){
+    	           String shortreply = reply.toString();
+    	           /*
+    	           if(shortreply.length() > 40){
+    	               shortreply = shortreply.substring(0, 40);
+    	           }*/
+    	           logger.debug("["+ oneReplyParser.getCurrentCmd()+ "->" + shortreply+ "]");
+	           }	           
+	           /*
+	           boolean doublecheck = replyParser.hasNext();
+	           if(false == doublecheck){
+	               System.out.println("how n why?");
+	               throw new IOException("how n why?");
+	           }
+	           */
 	           
 	           oneReplyParser.replyParser(reply);
                //DLSLogTime curtime = new DLSLogTime();

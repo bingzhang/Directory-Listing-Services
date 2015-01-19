@@ -33,7 +33,6 @@ public abstract class DLSStream{
 	public static final int ONE_PIPE_CAPACITY = DLSClient.ONE_PIPE_CAPACITY;
 
 	DLSProxyInfo proxyinfo;
-	
 	private final String streamKeyID;
 	public final int streamID;
 	protected int 	 port;
@@ -45,6 +44,7 @@ public abstract class DLSStream{
 	protected String realprotocol;
 	protected String token = null;
 	
+	/*replacable localCC*/
 	protected DLSFTPMetaChannel localCC;
 	protected CollectionAndDataObjectListAndSearchAO actualCollection;
 	
@@ -68,7 +68,9 @@ public abstract class DLSStream{
         CC_BENIGN
     };
     
-    
+    public DLSFTPMetaChannel getCC(){
+        return localCC;
+    }
     
 	public String getStreamKey(){
 		return this.streamKeyID;
@@ -152,7 +154,7 @@ public abstract class DLSStream{
 	}
 	
 	protected final DLSStreamPool dls_StreamPool; 
-	
+
 	boolean persistent_multi_Streams = false;//true
 	
 	protected DLSStream(String streamKey){
@@ -273,7 +275,7 @@ public abstract class DLSStream{
 				System.out.println("\nnew Stream Resource "+this.streamKeyID +" failed~! to open #Streams: " + sanity_check +" of total preassigned "+DLSStreamPool.NUM_CONCURRENCY_STREAM/*MAX_NUM_OPENStream*/ + " "+ protocol2 +" protocols~!");
 				throw new Exception("remote servers deny service~!\n");
 			}else{
-				System.out.println("\nnew Stream Resource "+this.streamKeyID +" finish to open #cc: " + DLSStreamPool.NUM_CONCURRENCY_STREAM/*MAX_NUM_OPENStream*/ + " #pp:" + ONE_PIPE_CAPACITY + " of total preassigned " + " "+ protocol2 +" protocols~!");
+				System.out.println("\nnew Stream Resource "+this.streamKeyID +" finish to open #cc:" + DLSStreamPool.NUM_CONCURRENCY_STREAM/*MAX_NUM_OPENStream*/ + " #pp:" + ONE_PIPE_CAPACITY + " of total preassigned " + " "+ protocol2 +" protocols~!");
 				persistent_multi_Streams = true;
 			}
 		}
@@ -347,14 +349,22 @@ public abstract class DLSStream{
 		        System.out.println("stream " + proxyclient.getStream().streamID + " " + assignedThreadName + listingFullPath + " to do CC revive");
 		        throw ex;
 		    }else if(proxyclient.channelstate == CHANNEL_STATE.DC_RETRANSMIT){
-		        System.out.println("stream " + proxyclient.getStream().streamID + " " + assignedThreadName + listingFullPath + " DC migrate");
-		        throw ex;
+		    	System.out.println("stream " + proxyclient.getStream().streamID + " " + assignedThreadName + listingFullPath + "TTL: " + listingtask.TTL +" DC migrate TTL");
+		    	if(listingtask.TTL <= 0){
+		    		proxyclient.channelstate = CHANNEL_STATE.DC_IGNORE;
+		    		System.out.println("stream " + proxyclient.getStream().streamID + " " + assignedThreadName + listingFullPath + " DC migrate to DC ignore");
+		    		//throw ex;
+		    	}else{
+			    	listingtask.TTL--;
+			        System.out.println("stream " + proxyclient.getStream().streamID + " " + assignedThreadName + listingFullPath + " DC migrate");
+			        throw ex;
+		    	}
 		    }else if(proxyclient.channelstate == CHANNEL_STATE.DC_IGNORE){
 		        fileList = null;
 		        System.out.println("stream " + proxyclient.getStream().streamID + " " + assignedThreadName + listingFullPath + " DC ignore");
 		    }
 		}
-		return fileList;		
+		return fileList;
 	}
 	
 	
@@ -367,6 +377,9 @@ public abstract class DLSStream{
 			st = System.currentTimeMillis();
 		}
 		Vector<FileInfo> fileList = listCMD(listingtask, assignedThreadName, path);
+		if(null == fileList && CHANNEL_STATE.CC_BENIGN == listingtask.getClient().channelstate){
+			fileList = new Vector();
+		}
 		String list_result = DLSResult.convertion(fileList, dlsresult);
 		if(PRINT_TIME){
 			long en = System.currentTimeMillis();

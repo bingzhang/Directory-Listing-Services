@@ -41,6 +41,9 @@ public class MlsxEntry {
     public static final String TYPE = "type";
     public static final String UNIQUE = "unique";
     public static final String PERM = "perm";
+    //added by bing
+    public static final String UnixMode = "unix.mode";
+    
     public static final String LANG = "lang";
     public static final String MEDIA_TYPE = "media-type";
     public static final String CHARSET = "charset";

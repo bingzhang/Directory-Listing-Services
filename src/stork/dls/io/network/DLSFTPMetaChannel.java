@@ -129,7 +129,7 @@ public class DLSFTPMetaChannel {
                         + allIPs[i] + " : " + port);
                     InetSocketAddress isa = new InetSocketAddress(allIPs[i], port);
                     this.socket = new Socket();
-                    this.socket.setSoTimeout(0);
+                    this.socket.setSoTimeout(30000);
                     if(DLSConfig.TCPNODELAY){
                         this.socket.setTcpNoDelay(true);
                     }
@@ -184,7 +184,7 @@ public class DLSFTPMetaChannel {
         SocketFactory factory = SocketFactory.getDefault();
         Socket mySocket = factory.createSocket(hp.getHost(), hp.getPort());
         //set 2sec for socket read timeout.
-        mySocket.setSoTimeout(2000);
+        //mySocket.setSoTimeout(2000);
         if(DLSConfig.TCPNODELAY){
             mySocket.setTcpNoDelay(true);
         }
@@ -240,7 +240,17 @@ public class DLSFTPMetaChannel {
             socket.close();//close channel socket
         hasBeenOpened = false;
         localmetachannel = null;
+    }public void close(boolean force) throws IOException {
+        logger.debug("ftp socket closed");
+        if (ftpIn != null)
+            ftpIn.close();
+        if (ftpOut != null)
+            ftpOut.close();
+        if (socket != null)
+            socket.close();//close channel socket
+        hasBeenOpened = false;
     }
+    
     
     /**
      * Sends the command over the control channel.
@@ -261,13 +271,6 @@ public class DLSFTPMetaChannel {
     	replies = localmetachannel.sendrecv(listingtask, assignedThread, cmds, replyParserChain, writeBacks);
         return Collections.unmodifiableList(replies);
     }
-
-	/**
-	 * @param args
-	 */
-	public static void main(String[] args) {
-
-	}
 
 	public int getCapacity() {
 		return localmetachannel.getCapacity();

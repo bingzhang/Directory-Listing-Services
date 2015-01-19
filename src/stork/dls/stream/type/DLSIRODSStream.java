@@ -19,8 +19,7 @@ import stork.dls.stream.DLSStreamPool;
 public class DLSIRODSStream  extends DLSStream{
 	public DLSIRODSStream(String streamkey) {
 		super(streamkey);
-	}
-	protected DLSIRODSStream(int id, String streamKey) {
+	}protected DLSIRODSStream(int id, String streamKey) {
 		super(id, streamKey);
 	}
 

@@ -17,6 +17,8 @@ import org.globus.ftp.vanilla.FTPControlChannel;
 import org.globus.ftp.vanilla.FTPServerFacade;
 import org.globus.ftp.vanilla.Reply;
 
+import stork.dls.stream.DLSStream;
+
 /**
  * wrapper of globus FTP client
  * 
@@ -24,7 +26,7 @@ import org.globus.ftp.vanilla.Reply;
  * @see
  * 		FTPClient
  */
-public class FTPClientEx extends FTPClient{
+public class FTPClientEx extends DLSClient{
 	FTPControlChannelEx ftpcex;
 	private static class FTPControlChannelEx extends FTPControlChannel {
 
@@ -45,7 +47,8 @@ public class FTPClientEx extends FTPClient{
 		 }
 	}
 
-	public FTPClientEx(String host, int port) throws ServerException, IOException{
+	public FTPClientEx(String host, int port, DLSStream input) throws ServerException, IOException{
+	    super(host, port, input);
 		session = new Session();
 		controlChannel = ftpcex = new FTPControlChannelEx(host, port);
         controlChannel.open();
@@ -54,6 +57,10 @@ public class FTPClientEx extends FTPClient{
         session.waitDelay = 5;
 	}
 	
+    public FTPClientEx(DLSStream ftpStream) {
+        super(ftpStream);
+    }
+
     public void setPassiveMode(boolean passiveMode)
             throws IOException, ClientException, ServerException {
             if (passiveMode) {

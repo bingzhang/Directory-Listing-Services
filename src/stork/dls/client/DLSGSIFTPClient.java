@@ -44,6 +44,7 @@ import org.ietf.jgss.GSSException;
 import org.ietf.jgss.GSSManager;
 import org.ietf.jgss.GSSName;
 
+import stork.dls.config.DLSConfig;
 import stork.dls.io.network.DLSFTPMetaChannel;
 import stork.dls.io.network.DLSSimpleTransferReader;
 import stork.dls.io.network.ReplyParser;
@@ -60,7 +61,7 @@ import stork.dls.util.DLSLog;
  */
 public class DLSGSIFTPClient extends DLSClient{
 	public static boolean DEBUG_PRINT;
-	public static boolean CONTROLCHANNEL_LISTING = false;//false
+	public static boolean CONTROLCHANNEL_LISTING = DLSConfig.CC_LISTING;//false
 	
 	private static DLSLog logger = DLSLog.getLog(DLSGSIFTPClient.class.getName());
 
@@ -340,6 +341,7 @@ public class DLSGSIFTPClient extends DLSClient{
 		replyParserChain.add(thirdReplyParser);
 		
 		if(DLSGSIFTPClient.CONTROLCHANNEL_LISTING){
+		    //final Command optsCmd = new Command("OPTS", "MLST Type*;Size*;Modify*;UNIX.mode*;UNIX.uid*;UNIX.gid*");
 		    final Command optsCmd = new Command("OPTS", "MLST Type*;Size*;Modify*;UNIX.mode*");
 		    cmds.add(optsCmd);
 		    ReplyParser fourthReplyParser =new ReplyParser() {

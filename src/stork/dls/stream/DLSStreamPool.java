@@ -230,7 +230,7 @@ public class DLSStreamPool {
 		    DLSStream stream = proxyclient.getStream();
 		    if(null != stream){
     		    synchronized(this){
-    		        boolean success = stream.increaseValue();
+    		        stream.increaseValue();
     		    }
 		    }
 		    
@@ -246,6 +246,10 @@ public class DLSStreamPool {
 		    //newStream.isReincarnation = REINCARNATION_STATUS.PROCESSING;
 		    return SimpleRecoveryStream(listingtask, assignedThreadName, path, newStream, activeIndx);
 		}else{
+            if(CHANNEL_STATE.DC_IGNORE ==proxyclient.channelstate){
+                DLSStream stream = proxyclient.getStream();
+                System.out.println("available streams: " + stream.value);
+            }
 		    return null;
 		}
    		

@@ -1,11 +1,15 @@
 package stork.dls.client;
 
 import java.io.IOException;
+import java.net.SocketTimeoutException;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Vector;
 
+import org.globus.ftp.FTPClient;
 import org.globus.ftp.FileInfo;
 import org.globus.ftp.HostPort;
 import org.globus.ftp.HostPort6;
@@ -40,7 +44,7 @@ import stork.dls.util.DLSLog;
  * 
  * @see DLSFTPMetaChannel
  */
-public class DLSClient implements FTPMetaCmdFun {
+public class DLSClient extends FTPClient implements FTPMetaCmdFun{
     public static boolean DEBUG_PRINT;
     public static boolean DEBUG_PIPELINE = false;
     private static DLSLog logger = DLSLog.getLog(DLSClient.class.getName());
@@ -118,8 +122,7 @@ public class DLSClient implements FTPMetaCmdFun {
             final String threadAssignedName, 
             String username,
             String password) throws Exception {
-        
-        final DLSFTPMetaChannel localCC = new DLSFTPMetaChannel(this.stream, host, port);
+        DLSFTPMetaChannel localCC = new DLSFTPMetaChannel(this.stream, host, port);
         localCC.open();
         login(listingtask, localCC, threadAssignedName, username, password);
         return localCC;
@@ -129,7 +132,7 @@ public class DLSClient implements FTPMetaCmdFun {
             final DLSFTPMetaChannel localCC, 
             final String threadAssignedName, 
             String username, String password) throws IOException, ServerException {
-        final String subject = threadAssignedName;
+        final String subject = "login";//threadAssignedName;
         final Command userCmd = new Command("USER", username);
         final Command passCmd = new Command("PASS", password);
         List<Command> cmds = new ArrayList<Command>();
@@ -151,7 +154,7 @@ public class DLSClient implements FTPMetaCmdFun {
             }
 
             public String getCurrentCmd() {
-                return subject + " " + userCmd.toString().trim();
+                return subject + ": " + userCmd.toString().trim();
             }
         };
         replyParserChain.add(firstReplyParser);
@@ -167,20 +170,28 @@ public class DLSClient implements FTPMetaCmdFun {
             }
 
             public String getCurrentCmd() {
-                return subject + " " + passCmd.toString().trim();
+                return subject + ": " + passCmd.toString().trim();
             }
         };
         replyParserChain.add(secondReplyParser);
         localCC.exchange(listingtask, threadAssignedName, cmds, replyParserChain,
                 null);
+        
+        
+        
     }
 
     private Vector<FileInfo> readDataChannel(final DLSListingTask listingtask, HostPort datahp,
             String pasvFailure, String listingFullPath) throws IOException {
         // final SocketBox socketBox;
+    	//System.out.println("readDataChannel" + Thread.currentThread());
         SocketBox socketBox;
         Vector<FileInfo> result = null;
         if (null == datahp) {
+            if(CHANNEL_STATE.CC_BENIGN == listingtask.getClient().channelstate){
+                listingtask.getClient().channelstate = CHANNEL_STATE.DC_RETRANSMIT;
+            }
+            this.closeDC();
             throw new IOException(pasvFailure);
         }
         int port = datahp.getPort();
@@ -193,6 +204,10 @@ public class DLSClient implements FTPMetaCmdFun {
             // ex.printStackTrace();
             logger.debug(listingFullPath + " open data channel: " + data_host
                     + " port = " + port + " failed~!");
+            if(CHANNEL_STATE.CC_BENIGN == listingtask.getClient().channelstate){
+                listingtask.getClient().channelstate = CHANNEL_STATE.DC_RETRANSMIT;
+            }
+            this.closeDC();
             throw new IOException(ex);
         }
         logger.debug(listingFullPath + " open data channel: " + data_host
@@ -205,13 +220,28 @@ public class DLSClient implements FTPMetaCmdFun {
                     socketBox);
             DLSSimpleTransferReader transferReader = new DLSSimpleTransferReader(
                     datachannel, socketBox, context);
+            //System.out.println("listingFullPath begins to read!");
+            socketBox.getSocket().setSoTimeout(10*1000); //10 sec
             result = transferReader.read();
-        } catch (Exception ex) {
+        }catch (SocketTimeoutException ex){ 
             // ex.printStackTrace();
             logger.debug(listingFullPath + " read data channel: " + data_host
                     + " port = " + port + " " + ex);
             System.out.println(listingFullPath + " read data channel: " + data_host
                     + " port = " + port + " " + ex + " cc stat: " + listingtask.getClient().channelstate);
+            listingtask.getClient().channelstate = CHANNEL_STATE.DC_IGNORE;
+            this.closeDC();
+            throw new IOException(ex);
+        }
+        catch (Exception ex) {
+            // ex.printStackTrace();
+            logger.debug(listingFullPath + " read data channel: " + data_host
+                    + " port = " + port + " " + ex);
+            System.out.println(listingFullPath + " read data channel: " + data_host
+                    + " port = " + port + " " + ex + " cc stat: " + listingtask.getClient().channelstate);
+            if(CHANNEL_STATE.CC_BENIGN == listingtask.getClient().channelstate){
+                listingtask.getClient().channelstate = CHANNEL_STATE.DC_RETRANSMIT;
+            }
             this.closeDC();
             throw new IOException(ex);
         }
@@ -246,60 +276,156 @@ public class DLSClient implements FTPMetaCmdFun {
             final String threadAssignedName,
             final String listingFullPath) throws Exception{ 
             //ServerException, ClientException, IOException {
-        
+        final String protocol = listingtask.getUri().getScheme();
         final String subject = threadAssignedName;
         final Vector<FileInfo> result[] = new Vector[1];
         final HostPort datahp[] = new HostPort[1];
-        final Command mlsccmd = new Command("MLSC", listingFullPath);
+        /*
+         * MLSC
+         * STAT
+         * MLST
+         * LIST
+         * NLST
+         */
+        
+        Command mlsccmd = null;
+        //final Command mlsccmd = new Command("MLSC", listingFullPath);
+        //final Command mlsccmd = new Command("LIST", listingFullPath);
         List<Command> cmds = new ArrayList<Command>();
-        cmds.add(mlsccmd);
         List<LocalReply> writeBacks = null;
 
         final String[] pasvFailure = new String[1];
         result[0] = new Vector<FileInfo>();
         List<ReplyParser> replyParserChain = new ArrayList<ReplyParser>();
         // Reply parser for control channel listing.
-        ReplyParser firstReplyParser = new ReplyParser() {
-            StringBuffer sb = new StringBuffer();
-            public void replyParser(Reply reply) throws IOException, ServerException {
-                if(Reply.isPermanentNegativeCompletion(reply)){
-                    // Listing failed.
-                } else if (Reply.isPositivePreliminary(reply)) {
-                    sb.append(reply.getMessage());
-                } else {
-                    // Listing succeeded.
-                    sb.append(reply.getMessage());
-                    for (String line : sb.toString().split("\n")) {
-                        try {
-                            if (!line.startsWith(" "))
-                                continue;
-                            MlsxEntry mlsxentry = new MlsxEntry(line);
-                            FileInfo fileinfo = new FileInfo();
-                            String name = mlsxentry.getFileName();                          
-                            fileinfo.setName(name);
-                            
-                            String type = mlsxentry.get("type");
-                            if (type != null && type.endsWith("dir")){
-                                fileinfo.setFileType(FileInfo.DIRECTORY_TYPE);
+        if(protocol.toLowerCase().equals("ftpdls")){
+        	mlsccmd = new Command("STAT", listingFullPath);
+            ReplyParser firstReplyParser = new ReplyParser() {
+                StringBuffer sb = new StringBuffer();
+                public void replyParser(Reply reply) throws IOException, ServerException {
+                	if(Reply.isPermanentNegativeCompletion(reply)){
+                        // Listing failed.
+                    } else if (Reply.isPositivePreliminary(reply)) {
+                        sb.append(reply.getMessage());
+                    } else {
+                        // Listing succeeded.
+                        sb.append(reply.getMessage());
+                        for (String line : sb.toString().split("\n")) {
+                        	FileInfo fileInfo = null;
+                            try {
+                            	line = line.trim();
+                                //if (line.startsWith("status") || line.startsWith("total"))
+                            	if (line.startsWith("d") || line.startsWith("-")){
+	                                try {
+	                                    fileInfo = new FileInfo(line);
+	                                } catch (FTPException e) {
+	                                    /*
+	                                    int existed = e.toString().indexOf(INVALID_TOKENNUM);
+	                                    if(-1 != existed){
+	                                        //continue;
+	                                    }*/
+	                                    ClientException ce =
+	                                        new ClientException(
+	                                                            ClientException.UNSPECIFIED,
+	                                                            "Could not create FileInfo");
+	                                    ce.setRootCause(e);
+	                                    throw ce;
+	                                }
+	                                result[0].add(fileInfo);
+                            	}
+                            } catch (FTPException e) {
+                                e.printStackTrace();
                             }
-                            result[0].add(fileinfo);
-                        } catch (FTPException e) {
-                            e.printStackTrace();
+                        }
+                        if(0 == result[0].size()){
+                        	DLSClient proxyclient = listingtask.getClient();
+                    		proxyclient.channelstate = CHANNEL_STATE.DC_IGNORE;                		
+                    		throw new IOException("No such file or directory");
                         }
                     }
                 }
-            }
 
-            public String getCurrentCmd() {
-                return null;
-            }
-        };
-        replyParserChain.add(firstReplyParser);
+                public String getCurrentCmd() {
+                    return subject + ": " + "list more";
+                }
+            };    
+            replyParserChain.add(firstReplyParser);
+        }else{// gridftp or gsiftp parser
+        	mlsccmd = new Command("MLSC", listingFullPath);
+	        ReplyParser firstReplyParser = new ReplyParser() {
+	            StringBuffer sb = new StringBuffer();
+	            public void replyParser(Reply reply) throws IOException, ServerException {
+	                if(Reply.isPermanentNegativeCompletion(reply)){
+	                    // Listing failed.
+	                } else if (Reply.isPositivePreliminary(reply)) {
+	                    sb.append(reply.getMessage());
+	                } else {
+	                    // Listing succeeded.
+	                    sb.append(reply.getMessage());
+	                    for (String line : sb.toString().split("\n")) {
+	                        try {
+	                            if (!line.startsWith(" "))
+	                                continue;
+	                            MlsxEntry mlsxentry = new MlsxEntry(line);
+	                            FileInfo fileinfo = new FileInfo();
+	                            String name = mlsxentry.getFileName();                          
+	                            fileinfo.setName(name);
+	                            
+	                            String type = mlsxentry.get("type");
+	                            if (type != null){
+	                            	if(type.endsWith("dir")){
+	                            		fileinfo.setFileType(FileInfo.DIRECTORY_TYPE);
+	                            	}else if(type.endsWith("file")){
+	                            		fileinfo.setFileType(FileInfo.FILE_TYPE);
+	                            	}
+	                                String factname = mlsxentry.SIZE;
+	                                fileinfo.setSize(Integer.parseInt(mlsxentry.get(factname)));
+	                                //final SimpleDateFormat dformat = new SimpleDateFormat("yyyyMMddHHmmss");
+	                                factname = mlsxentry.MODIFY;
+	                                String dateString = mlsxentry.get(factname);
+	                                fileinfo.setDate(dateString);
+	                                fileinfo.setTime(null);
+	                                /*
+	                                Date date = null;
+									try {
+										date = dformat.parse(dateString);
+										fileinfo.setDate(date.toString());
+									} catch (ParseException e) {
+										e.printStackTrace();
+									}*/
+	                                factname = mlsxentry.PERM;
+	                                String perm = mlsxentry.get(factname);
+	                                if(null == perm ){
+	                                	factname = mlsxentry.UnixMode;
+	                                	String mode = mlsxentry.get(factname);
+		                                int permission = Integer.parseInt(mode);
+		                                fileinfo.setMode(permission);
+		                                //System.out.println(name + " " + permission);
+	                                }else{
+		                                int permission = Integer.parseInt(perm);
+		                                fileinfo.setMode(permission);
+		                                //System.out.println(name + " " + permission);
+	                                }
+	                            }
+	                            result[0].add(fileinfo);
+	                        } catch (FTPException e) {
+	                            e.printStackTrace();
+	                        }
+	                    }
+	                }
+	            }
+	            public String getCurrentCmd() {
+	                return subject + ": " + "list more";
+	            }
+	        };
+        	replyParserChain.add(firstReplyParser);
+        }
+        
 
         writeBacks = new ArrayList<LocalReply>();
         LocalReply writeback = new LocalReply(226, "finish transfer~!");
         writeBacks.add(writeback);
-
+        cmds.add(mlsccmd);
         try{
             localCC.exchange(listingtask, threadAssignedName, cmds, replyParserChain, writeBacks);
         }catch (Exception ex){
@@ -318,7 +444,7 @@ public class DLSClient implements FTPMetaCmdFun {
             final String listingFullPath) throws Exception{ 
             //ServerException, ClientException, IOException {
         
-        final String subject = threadAssignedName;
+        final String subject = listingFullPath+";dclist";//threadAssignedName;
         final Vector<FileInfo> result[] = new Vector[1];
         final HostPort datahp[] = new HostPort[1];
         final Command pasvCmd = Command.PASV;
@@ -362,7 +488,7 @@ public class DLSClient implements FTPMetaCmdFun {
             }
 
             public String getCurrentCmd() {
-                return subject + " " + pasvCmd.toString().trim();
+                return subject + ": " + pasvCmd.toString().trim();
             }
         };
         replyParserChain.add(firstReplyParser);
@@ -376,7 +502,7 @@ public class DLSClient implements FTPMetaCmdFun {
             }
 
             public String getCurrentCmd() {
-                return subject + " " + lsitcmd.toString().trim();
+                return subject + ": " + lsitcmd.toString().trim();
             }
         };
         replyParserChain.add(secondReplyParser);
@@ -422,7 +548,7 @@ public class DLSClient implements FTPMetaCmdFun {
                 }
 
                 public String getCurrentCmd() {
-                    return subject + " " + pasvCmd.toString().trim();
+                    return subject + ": " + pasvCmd.toString().trim();
                 }
             };
             replyParserChain.add(firstReplyParser2);
@@ -432,8 +558,12 @@ public class DLSClient implements FTPMetaCmdFun {
             localCC.exchange(listingtask, threadAssignedName, cmds, replyParserChain, writeBacks);
         }catch (Exception ex){
             DLSClient proxyclient = listingtask.getClient();
-            DLSStream stream = proxyclient.stream; 
-            System.out.println("in list stream " + stream.streamID + " " + threadAssignedName + listingFullPath + " cc stat: " + proxyclient.channelstate + " client: " + proxyclient);
+            DLSStream stream = proxyclient.stream;
+            if(CHANNEL_STATE.CC_BENIGN == proxyclient.channelstate){
+                System.out.println("dclist got excep " + stream.streamID + " " + threadAssignedName + listingFullPath + " cc stat: " + proxyclient.channelstate + " client: " + proxyclient);
+                proxyclient.channelstate = CHANNEL_STATE.DC_RETRANSMIT;
+                ex.printStackTrace();                
+            }
             throw ex;
         }
         return result[0];

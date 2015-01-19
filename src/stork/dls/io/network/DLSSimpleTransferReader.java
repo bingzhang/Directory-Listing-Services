@@ -4,6 +4,7 @@ import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.StringReader;
+import java.net.SocketTimeoutException;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Vector;
@@ -30,7 +31,7 @@ import stork.dls.util.DLSLog;
 public class DLSSimpleTransferReader {
 	public static boolean DEBUG_PRINT;
 	private static DLSLog logger = DLSLog.getLog(DLSSimpleTransferReader.class.getName());
-	
+	private static String INVALID_TOKENNUM = "Invalid number of tokens";
     protected SocketBox socketBox;
     protected TransferContext context;
     protected DataChannelReader reader;
@@ -61,7 +62,8 @@ public class DLSSimpleTransferReader {
     		received = sink.getData().toString();
     	}
     	if(null == received) {
-    		return null;
+    		throw new SocketTimeoutException();
+    		//return null;
     	}
         BufferedReader reader =
                 new BufferedReader(new StringReader(received.toString()));
@@ -80,6 +82,11 @@ public class DLSSimpleTransferReader {
             try {
                 fileInfo = new FileInfo(line);
             } catch (FTPException e) {
+                
+                int existed = e.toString().indexOf(INVALID_TOKENNUM);
+                if(-1 != existed){
+                    //continue;
+                }
                 ClientException ce =
                     new ClientException(
                                         ClientException.UNSPECIFIED,

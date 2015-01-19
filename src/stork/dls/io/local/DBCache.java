@@ -11,7 +11,7 @@ import com.sleepycat.persist.model.*;
 
 import java.io.*;
 import java.util.regex.*;
-
+/*
 @Persistent
 class CompositeKey {//CompositeKey
 	@KeyField(1)
@@ -48,7 +48,7 @@ class ValueEntry {
 		return "ValueEntry: (" + key + "," + metadataString + ")";
     }
 }
-
+*/
 /**
  * very simple DB cache implementaion and related
  * IO transaction in DB

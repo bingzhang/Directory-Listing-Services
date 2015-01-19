@@ -8,6 +8,7 @@ import stork.dls.client.DLSClient;
 
 public class DLSListingTask {
 	protected final static boolean PIPEMYSELF = true;
+	public int TTL;
 	public  long inmemCacheElapseTime;
 	public  DLSStream assignedStream;
 	private final String cachekey;
@@ -38,6 +39,7 @@ public class DLSListingTask {
     }
 	
     public DLSListingTask(URI uri){
+    	TTL = 3;
         cachekey = null;
         this.uri = uri;
         username = null;
@@ -53,6 +55,7 @@ public class DLSListingTask {
     }
     
 	public DLSListingTask(long threadID, URI uri, DLSProxyInfo dlsproxy, boolean forceRefresh, boolean enablePrefetch, String proxy, String zone, String resource){
+		TTL = 3;
 		uri = uri.normalize();
 		String serverName = uri.getHost();
 		String pathEntry = uri.getPath();
@@ -74,6 +77,7 @@ public class DLSListingTask {
 			//if(serverName.equals("osg-xsede.grid.iu.edu")){
 				if(protocol.toLowerCase().equals("ftp")){
 					dlsprotocol = protocol + "DLS";
+					//dlsprotocol = protocol;
 				}else if(protocol.toLowerCase().equals("gsiftp")){
 					dlsprotocol = protocol + "DLS";
 				}else if(protocol.toLowerCase().equals("irods")){
