@@ -1,6 +1,7 @@
 package stork.dls.loader;
 
 import java.net.URL;
+
 import javax.servlet.ServletContextEvent;
 import javax.servlet.ServletContextListener;
 
@@ -11,7 +12,6 @@ import stork.dls.io.local.DBCache;
 import stork.dls.rest.RestInterface;
 
 public class DLSloader implements ServletContextListener{
-
 	public void contextDestroyed(ServletContextEvent arg0) {
 	}
 	public void contextInitialized(ServletContextEvent arg0) {
@@ -19,33 +19,36 @@ public class DLSloader implements ServletContextListener{
 		try{
 			URL url = this.getClass().getClassLoader().getResource(name);
 			Ad ad = Ad.parse(url.openStream());
-			DBCache.BDB_PATH = ad.get("conf.BDB_PATH", DBCache.BDB_PATH);
-			MemoryCache.inMemoryCache_capacity = ad.getInt("conf.inMemoryCache_capacity", MemoryCache.inMemoryCache_capacity);
+			DBCache.BDB_PATH = ad.get("this.BDB_PATH", DBCache.BDB_PATH);
+			MemoryCache.inMemoryCache_capacity = ad.getInt("this.inMemoryCache_capacity", MemoryCache.inMemoryCache_capacity);
 			RestInterface.ip = ad.get("ip", RestInterface.ip);
 			RestInterface.hostname = ad.get("hostname", RestInterface.hostname);
-			DLSConfig.CC_LISTING = ad.getBoolean("conf.CC_LISTING", DLSConfig.CC_LISTING);
-			DLSConfig.TCPNODELAY = ad.getBoolean("conf.TCP_NODELAY", DLSConfig.TCPNODELAY);
-			DLSConfig.DLS_CONCURRENCY_STREAM = ad.getInt("conf.DLS_CONCURRENCY_STREAM", DLSConfig.DLS_CONCURRENCY_STREAM);
-			DLSConfig.DLS_PIPE_CAPACITY = ad.getInt("conf.DLS_PIPE_CAPACITY", DLSConfig.DLS_PIPE_CAPACITY);
-			final String env = ad.get("replica.env", "env");
-			final String nodeName = ad.get("replica.nodeName", "nodeName");
-			final String nodeHost = ad.get("replica.nodeHost", "nodeHost");
-			final String helperHost = ad.get("replica.helperHost", "helperHost");			
-			//String[] argv = ;
-			//ReplicaStub replicastub = new ReplicaStub();
-			
+			DLSConfig.CC_LISTING = ad.getBoolean("this.CC_LISTING", DLSConfig.CC_LISTING);
+			DLSConfig.TCPNODELAY = ad.getBoolean("this.TCP_NODELAY", DLSConfig.TCPNODELAY);
+			DLSConfig.DLS_CONCURRENCY_STREAM = ad.getInt("this.DLS_CONCURRENCY_STREAM", DLSConfig.DLS_CONCURRENCY_STREAM);
+			DLSConfig.SINGLETON = ad.getBoolean("this.SINGLETON", DLSConfig.SINGLETON);
+			DLSConfig.REPLICA_QUEUE_HOST = ad.get("replicaQueue.host", DLSConfig.REPLICA_QUEUE_HOST);
+			DLSConfig.DLSEDGE = ad.getBoolean("this.DLSEDGE", DLSConfig.DLSEDGE);
 		}catch (Exception ex){
 			ex.printStackTrace();
 			System.out.println("fail to open DLS.conf ~!");
+			return;
 		}
 		
 		System.out.println("{{ DLS on: " + RestInterface.ip + " " + RestInterface.hostname );
 		System.out.println("system listing on control channel: " + DLSConfig.CC_LISTING);
+		System.out.println("DLSConfig.SINGLETON: " + DLSConfig.DLSEDGE);
 		System.out.println("dls.conf.BDB_PATH: " + DBCache.BDB_PATH);
 		System.out.println("MemoryCache.inMemoryCache_capacity: " + MemoryCache.inMemoryCache_capacity);
 		System.out.println("DLSConfig.DLS_CONCURRENCY_STREAM: " + DLSConfig.DLS_CONCURRENCY_STREAM);
 		System.out.println("DLSConfig.DLS_PIPE_CAPACITY: " + DLSConfig.DLS_PIPE_CAPACITY);
+		System.out.println("DLSConfig.SINGLETON: " + DLSConfig.SINGLETON);
 		System.out.println("init all the components }}");
+		
+		if (DLSConfig.SINGLETON) {
+			System.out.println("[Connect to replica queue Host] " + DLSConfig.REPLICA_QUEUE_HOST);
+		}
+		
 		try{
 			stork.dls.config.DebugConfig.DebugPrint();
 			stork.dls.service.prefetch.DLSThreadsManager.INIT();
@@ -57,6 +60,7 @@ public class DLSloader implements ServletContextListener{
 			e.printStackTrace();
 			System.exit(1);
 		}
+		System.out.println("contextInitialized done!~");
 	}
 
 }

@@ -3,14 +3,15 @@ package stork.dls.io.local;
 import com.sleepycat.je.*;
 import com.sleepycat.persist.*;
 import com.sleepycat.persist.model.*;
-/*
- * bingzhan@buffalo.edu
- * JE = BDB java edition
- * 
- */
 
 import java.io.*;
 import java.util.regex.*;
+
+import stork.dls.config.DLSConfig;
+import stork.dls.loader.DLSloader;
+import stork.dls.rabbitmq.Publisher;
+import stork.dls.rabbitmq.Subscriber;
+import stork.dls.util.Rabbitmq;
 /*
 @Persistent
 class CompositeKey {//CompositeKey
@@ -67,6 +68,11 @@ public class DBCache {
 	public static final String NoEntry = "Metadata entry does not exist";
 	//public static final String BDB_PATH = "/home/ubuntu/DLS/BDB/";
 	public static String BDB_PATH = "/home/ubuntu/DLS/BDB/";
+	private Rabbitmq rabbitmq = null;
+	
+	private Publisher publisher = null;
+	private Subscriber subscriber = null;
+	
 	static {
 		System.out.println("bdb_path = "+BDB_PATH);
 	}
@@ -96,6 +102,13 @@ public class DBCache {
 	
 	public DBCache() throws Exception {
 		init();
+		
+		//rabbitmq = (DLSConfig.SINGLETON) ? null : new Rabbitmq(this);
+		if(!DLSConfig.DLSEDGE) {
+		  publisher = new Publisher(DLSConfig.REPLICA_QUEUE_HOST);
+		} else {
+		  subscriber = new Subscriber(DLSConfig.REPLICA_QUEUE_HOST, this);
+		}
 	}
 	
 	private synchronized void init() throws Exception {
@@ -121,7 +134,7 @@ public class DBCache {
 		primaryIndex = store.getPrimaryIndex(CompositeKey.class, ValueEntry.class);
 		if(DBCacheConfig.preload){
 			try {
-				DBCachePreload();
+				//DBCachePreload();
 			} catch (Exception e) {
 				e.printStackTrace();
 				throw new Exception("DB preload failed~!");
@@ -178,8 +191,10 @@ public class DBCache {
 		try {
 			ce = primaryIndex.get(cacheKey);
 			result = ce.metadataString;
-
 		} catch (NullPointerException e) {
+			result = NoEntry;
+		} catch(Exception e){
+			e.printStackTrace();
 			result = NoEntry;
 		}
 		return result;
@@ -198,7 +213,19 @@ public class DBCache {
 		return result;
 	}
 
-	public void put(String serverName, String pathEntry, String metadataString) throws DatabaseException {
+	public void put(String serverName, String pathEntry, String metadataString, boolean isForward) throws DatabaseException, IOException {
+		/*
+	  if (null != rabbitmq && isForward) {
+			rabbitmq.upload(serverName, pathEntry, metadataString);
+		}*/
+		
+		// if this is DLSCloud, then it needs to broadcast this update to all subscribing local DLSs.
+		// we use path as the topic. so this is topic broadcast.
+		if (!DLSConfig.DLSEDGE && isForward) {
+		  publisher.uploading_updates(serverName, pathEntry, metadataString);
+		}
+		
+		System.out.println("[Write:]" + pathEntry);
 		primaryIndex.putNoReturn(new ValueEntry(new CompositeKey(serverName, pathEntry), metadataString));
 	}
 
@@ -222,10 +249,21 @@ public class DBCache {
 		try {
 			ce = primaryIndex.get(new CompositeKey(serverName, pathEntry));
 			result = ce.metadataString;
-
 		} catch (NullPointerException e) {
 			result = NoEntry;
+		} catch (Exception e){
+			result = NoEntry;
+			e.printStackTrace();
 		}
+		// if this is edge DLS, subscribe the update on the lookup path 
+		if(DLSConfig.DLSEDGE) {
+		  try {
+        this.subscriber.subsribe(pathEntry);
+      } catch (Exception e) {
+        e.printStackTrace();
+      }
+		}
+		
 		return result;
 	}	
 	

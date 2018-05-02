@@ -132,8 +132,6 @@ public class RestInterface {
             }
         }
 	    
-	    
-	    
 		if (!ad.has("URI")){
 			throw new Exception("URI parameter is missing from request");
 		}
@@ -150,6 +148,15 @@ public class RestInterface {
 		    uri = new URI(tmp1+ ":/" + tmp3);
 		    //System.out.println(tmp1+ ":/" + tmp3);
 		}
+		final String oper = ad.get("operations");
+		if(null != oper && oper.toLowerCase().equals("insert")){
+			DLSIOAdapter ioAdapter = new DLSIOAdapter();
+			String metadata = "";
+			metadata = ad.get("value");
+			String result = ioAdapter.insert(uri, uri.getPath(), metadata);
+			return new Ad(uri.getHost()+uri.getPath(), result);
+		}
+		
 		
 		final boolean forceRefresh = ad.getBoolean("forceRefresh");
 		final boolean enablePrefetch = ad.getBoolean("enablePrefetch");

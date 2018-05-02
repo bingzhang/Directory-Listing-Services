@@ -7,7 +7,7 @@ import stork.dls.client.DLSClient;
 
 
 public class DLSListingTask {
-	protected final static boolean PIPEMYSELF = true;
+	protected final static boolean PIPEMYSELF = true;// if set to true, then will use DLS pipe to send requests.
 	public int TTL;
 	public  long inmemCacheElapseTime;
 	public  DLSStream assignedStream;

@@ -74,11 +74,12 @@ public class MetaChannel {
 	/**
 	 * Each submitted list cmd will create one (pipeTask) object in wakupQueue in the sequence of submission.
 	 * <br><b>Infinite capacity</b>: because if there is failure,
-	 * we need to re-send the whoe pipeTask objects in wakeupQueue.
+	 * we need to re-send the whole pipeTask objects in wakeupQueue.
 	 * Or, let each to throw exception.
 	 */
 	protected MetaChannelMonitor monitor;
 	protected final LinkedBlockingQueue<DLSMetaCmdTask> wakupQueue;
+	//protected final ConcurrentHashMap<DLSMetaCmdTask, Boolean> zombietask;
 
 	public void pollWakupQueue(){
         if(wakupQueue.size() > 0){
@@ -95,6 +96,7 @@ public class MetaChannel {
 	    this.monitor = null;
 	    this.spinlock = null;
 	    this.wakupQueue = null;
+	    //this.zombietask = null;
 	    this.dataChannelFactory = null;
 	}
 	
@@ -115,6 +117,7 @@ public class MetaChannel {
 	    this.ftpOut = ftpOut;
 		this.dataChannelFactory = new SimpleDataChannelFactory();
 		wakupQueue = new LinkedBlockingQueue<DLSMetaCmdTask>();
+		//this.zombietask = new ConcurrentHashMap<DLSMetaCmdTask, Boolean>();
 		bindMonitor();
 	}
 	
@@ -183,8 +186,9 @@ public class MetaChannel {
 	           }
 	           oneReplyParser.replyParser(reply);
 	           replies.add(reply);
-	       }	    
-	    return replies;
+	       }
+	       //this.zombietask.remove(metaTask);
+	       return replies;
 	}
 	
 	//asynchronous method
@@ -210,6 +214,8 @@ public class MetaChannel {
 	               if(true != this.monitor.isTermintate()){
     	               metaTask = new DLSMetaCmdTask(listingtask, assignedThreadName, cmds, replyParserChain, writeBacks, this);
     	               //synchronized write into the shared queue.
+    	               Boolean yes = new Boolean(true);
+    	               //this.zombietask.put(metaTask, yes);
     	               writeCmdGreedy(metaTask);
 	               }else{
 	                   if(this.monitor.isTobeRevived(false)){
@@ -304,7 +310,7 @@ public class MetaChannel {
                                     try{
                                         //monitoringTerminate = true;
                                         isActiveCmds = false;
-                                        channelTerminate(reply);
+                                        channelTerminate(reply, e);
                                     }finally{
                                         spinlock.writeLock().unlock();
                                     }
@@ -322,7 +328,7 @@ public class MetaChannel {
                                     try{
                                         //monitoringTerminate = true;
                                         isActiveCmds = false;
-                                        channelTerminate(reply);
+                                        channelTerminate(reply, e);
                                     }finally{
                                         spinlock.writeLock().unlock();
                                     }
@@ -345,7 +351,7 @@ public class MetaChannel {
                                     try{
                                         //monitoringTerminate = true;
                                         isActiveCmds = false;
-                                        channelTerminate(reply);
+                                        channelTerminate(reply, e);
                                     }finally{
                                         logger.debug(spinlock + " going to do writeLock().unlock()");
                                         spinlock.writeLock().unlock();
@@ -389,7 +395,7 @@ public class MetaChannel {
 			            	if(421 == reply.getCode()){
 			            	    System.out.println("MetaChannel exception: 421 == reply.getCode()");
                                 isActiveCmds = false;
-                                channelTerminate(reply);
+                                channelTerminate(reply, new Exception("isTransientNegativeCompletion"));
 			            	    /*
 			            	    synchronized(wakupQueue){
 			            	        monitoringTerminate = true;
@@ -410,7 +416,7 @@ public class MetaChannel {
 			    			     * CC is broken. The victim thread will revive this cc  
 			    			     */
 			    			    isActiveCmds = false;
-			    				channelTerminate(reply);
+			    				channelTerminate(reply, new Exception("isPermanentNegativeCompletion"));
 			    			}else{
 			    			    /**
 			    			     * this case could be: permission deny, wrong listing path
@@ -440,7 +446,7 @@ public class MetaChannel {
 		        	     * channel is broken
 		        	     * loop wakupQueue, set exception flag to each task
 		        	     */
-		        	    channelTerminate(reply);
+		        	    channelTerminate(reply, new Exception("may duplicate Ex"));
 		        	}
                     /*
 		        	else{
@@ -468,7 +474,7 @@ public class MetaChannel {
 	     * monitor thread will naturally exit.
 	     * @param reply
 	     */
-	   public void channelTerminate(Reply reply) {
+	   public void channelTerminate(Reply reply, Exception ex) {
             while(true){
                 if(spinlock.writeLock().tryLock()){
                     try{
@@ -477,7 +483,8 @@ public class MetaChannel {
                     	    return;
                     	}
                     	DLSLogTime time = new DLSLogTime();
-                    	System.out.println("REPLY cause excep: " + time + reply);
+                    	int steamid = attachedStream.streamID;
+                    	System.out.println("REPLY cause excep: " +ex +" ;" + time + " ;repl:"+reply + " ; steam id: "+steamid);
                         //2nd.
                         //extra check condition: timeout flag
                     	cc_need_revive = true;
@@ -497,29 +504,40 @@ public class MetaChannel {
                             }
                             //can not close cc socket, otherwise can not revive it again.
                             return;
+                        }else{
+	                        DLSClient dummyclient = task.getListingTask().getClient();
+	                        //1st.
+	                        DLSStream stream = dummyclient.getStream();
+	                        stream.value = 0;
+	                        stream.isAvailable = false;
+	                        
+	                        //3rd.
+	                        dummyclient.channelstate = CHANNEL_STATE.CC_REVIVE;
+	                        System.out.println("Task: " + task + " caused cc: " + dummyclient.getStream().streamID + " broken to revive!" + " cc stat: " + dummyclient.channelstate + " client: " + dummyclient);
+	                        task.wakeUp(reply, true);
+	                        wakupQueue.poll();
+	                        //report # stream's control channel is broken.
+	                        //4th.
+	                        boolean keepLooping = false;
+	                        while(null != (task = wakupQueue.peek()) ){
+	                            do{
+	                                task.getListingTask().getClient().channelstate = CHANNEL_STATE.DC_RETRANSMIT;
+	                                System.out.println("Task: " + task + " caused cc: " + dummyclient.getStream().streamID + " broken to migrate!" + " cc stat: " + dummyclient.channelstate + " client: " + dummyclient);
+	                                keepLooping = task.wakeUp(reply, true);
+	                            }while(keepLooping);
+	                            wakupQueue.poll();
+	                        }
                         }
-                        DLSClient dummyclient = task.getListingTask().getClient();
-                        //1st.
-                        DLSStream stream = dummyclient.getStream();
-                        stream.value = 0;
-                        stream.isAvailable = false;
-                        
-                        //3rd.
-                        dummyclient.channelstate = CHANNEL_STATE.CC_REVIVE;
-                        System.out.println("Task: " + task + " caused cc: " + dummyclient.getStream().streamID + " broken to revive!" + " cc stat: " + dummyclient.channelstate + " client: " + dummyclient);
-                        task.wakeUp(reply, true);
-                        wakupQueue.poll();
-                        //report # stream's control channel is broken.
-                        //4th.
-                        boolean keepLooping = false;
-                        while(null != (task = wakupQueue.peek()) ){
-                            do{
-                                task.getListingTask().getClient().channelstate = CHANNEL_STATE.DC_RETRANSMIT;
-                                System.out.println("Task: " + task + " caused cc: " + dummyclient.getStream().streamID + " broken to migrate!" + " cc stat: " + dummyclient.channelstate + " client: " + dummyclient);
-                                keepLooping = task.wakeUp(reply, true);
-                            }while(keepLooping);
-                            wakupQueue.poll();
-                        }
+                        /*
+                        Iterator<Map.Entry<DLSMetaCmdTask, Boolean>> iterator = zombietask.entrySet().iterator();
+                        while(iterator.hasNext()){
+                        	Map.Entry<DLSMetaCmdTask, Boolean> entry = iterator.next();
+                        	DLSMetaCmdTask zombie = entry.getKey();
+                        	if(null != zombie){
+                        		zombie.wakeUp(reply, true);
+                        	}
+                        	iterator.remove();
+                        }*/
                     }finally{
                         spinlock.writeLock().unlock();
                     }
@@ -540,7 +558,6 @@ public class MetaChannel {
         public boolean isTermintate() {
             return this.monitoringTerminate;
         }
-        @Override
         public boolean isTobeRevived(boolean flip) {
             this.cc_need_revive = this.cc_need_revive^flip;
             return this.cc_need_revive;

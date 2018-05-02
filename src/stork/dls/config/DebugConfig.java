@@ -25,8 +25,8 @@ public class DebugConfig {
 	 * for debug
 	 */
 	public static void DebugPrint(){
-		MetaChannel.DEBUG_PRINT = true;//true;
-		MetaChannel_State.DEBUG_PRINT = true;
+		//MetaChannel.DEBUG_PRINT = true;//true;
+		//MetaChannel_State.DEBUG_PRINT = true;
 		DLSMetaCmdTask.DEBUG_PRINT = false;//true;
 		
 		DLSStreamPool.DEBUG_PRINT = false;//false;true;
@@ -48,7 +48,7 @@ public class DebugConfig {
 		DLSSimpleTransferReader.DEBUG_PRINT = false;//true;
 		
 		//all the protocols stream class
-		DLSStream.DEBUG_PRINT = false;//true;
+		DLSStream.DEBUG_PRINT = true;//true;
 		
 		DLSStreamManagement.DEBUG_PRINT = false;
 	}

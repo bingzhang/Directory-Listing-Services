@@ -1,7 +1,11 @@
 package stork.dls.stream;
 
+import java.io.IOException;
 import java.net.URI;
+
 import javax.annotation.concurrent.GuardedBy;
+
+import com.sleepycat.je.DatabaseException;
 
 import stork.dls.client.DLSClient;
 import stork.dls.io.local.DBCache;
@@ -119,7 +123,7 @@ public class DLSIOAdapter {
 				return result;
 			}
 		}
-		//read from network
+		
 		try{
 			final DLSProxyInfo dlsproxy = listingtask.getDlsproxy();
 			final String proxyCertContent = listingtask.getProxy();
@@ -171,7 +175,7 @@ public class DLSIOAdapter {
 		isNetwork = true;
 		if(null != result){
 			String adstring = dlsresult.getAdString();
-			db_cache.put(uri.getHost(), path, adstring);
+			db_cache.put(uri.getHost(), path, adstring, true);
 		}else{
 			//result = NOSUCHEXIST.toString();
 		    System.out.println(assignedThreadName + " finish; path = "+path+"; with activeindex = " + listingtask.assignedStream.streamID);
@@ -179,4 +183,9 @@ public class DLSIOAdapter {
 		}
 		return result;
 	}
+	public String insert(URI uri, String path, String adstring) throws DatabaseException, IOException{
+		db_cache.put(uri.getHost(), path, adstring, false);
+		return "Successful";
+	}
+	
 }

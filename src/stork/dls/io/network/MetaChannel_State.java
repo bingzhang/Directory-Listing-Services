@@ -74,6 +74,7 @@ public class MetaChannel_State extends MetaChannel{
 	       List<Reply> replies = new ArrayList<Reply>();
 	       Iterator<ReplyParser> replyParser = metaTask.getReplayParserChain().iterator();
 	       ReplyParser oneReplyParser = null;
+	       logger.debug("[handleReply]: " + metaTask.toString() + "before while waiton~");
 	       while(null != (reply = metaTask.waitOn())){
 	           if(this.monitor.isTermintate() || metaTask.isException){
 	               String exceptionSubject = metaTask.toString();
@@ -106,7 +107,7 @@ public class MetaChannel_State extends MetaChannel{
     	           if(shortreply.length() > 40){
     	               shortreply = shortreply.substring(0, 40);
     	           }*/
-    	           logger.debug("["+ oneReplyParser.getCurrentCmd()+ "->" + shortreply+ "]");
+    	           //logger.debug("["+ oneReplyParser.getCurrentCmd()+ "->" + shortreply+ "]");
 	           }	           
 	           /*
 	           boolean doublecheck = replyParser.hasNext();
@@ -117,12 +118,14 @@ public class MetaChannel_State extends MetaChannel{
 	           */
 	           
 	           oneReplyParser.replyParser(reply);
-               //DLSLogTime curtime = new DLSLogTime();
-               //logger.debug(oneReplyParser.getCurrentCmd() + " Recv: {\n"+ reply.toString());
-               //System.out.println(oneReplyParser.getCurrentCmd() + ". time: " +curtime.toString() +" Recved ");
+               DLSLogTime curtime = new DLSLogTime();
+               logger.debug(oneReplyParser.getCurrentCmd() + " Recv: {\n"+ reply.toString());
+               logger.debug(oneReplyParser.getCurrentCmd() + ". time: " +curtime.toString() +" Recved ");
 	           replies.add(reply);
-	       }	    
-	    return replies;
+	       }
+	       logger.debug("[handleReply]: " + metaTask.toString() + "after while waiton~");
+	       //this.zombietask.remove(metaTask);
+	       return replies;
 	}
 	
 	//TransferSinkThread
@@ -153,6 +156,7 @@ public class MetaChannel_State extends MetaChannel{
 		        	activeCmdTask = null;
 		        	do{
 						try {
+							reply = null;
 							reply = read();
 						} catch (ServerException e) {
 							//e.printStackTrace();
@@ -160,6 +164,7 @@ public class MetaChannel_State extends MetaChannel{
                                 if(spinlock.writeLock().tryLock()){
                                     try{
                                         monitoringTerminate = true;
+                                        channelTerminate(reply, e);
                                     }finally{
                                         spinlock.writeLock().unlock();
                                     }
@@ -174,6 +179,7 @@ public class MetaChannel_State extends MetaChannel{
                                 if(spinlock.writeLock().tryLock()){
                                     try{
                                         monitoringTerminate = true;
+                                        channelTerminate(reply, e);
                                     }finally{
                                         spinlock.writeLock().unlock();
                                     }
@@ -188,6 +194,7 @@ public class MetaChannel_State extends MetaChannel{
                                 if(spinlock.writeLock().tryLock()){
                                     try{
                                         monitoringTerminate = true;
+                                        channelTerminate(reply, e);
                                     }finally{
                                         spinlock.writeLock().unlock();
                                     }
@@ -247,6 +254,7 @@ public class MetaChannel_State extends MetaChannel{
 			            	if(421 == reply.getCode()){
 			            	    synchronized(wakupQueue){
 			            	        monitoringTerminate = true;
+			            	        channelTerminate(reply, new Exception("isTransientNegativeCompletion"));
 			            	    }
 			            		break;
 			            	}
@@ -264,23 +272,31 @@ public class MetaChannel_State extends MetaChannel{
 			    			     * CC is broken. The victim thread will revive this cc  
 			    			     */
 			    			    isActiveCmds = false;
-			    				channelTerminate(reply);
+			    				channelTerminate(reply, new Exception("isPermanentNegativeCompletion"));
 			    			}else{
 			    			    /**
 			    			     * this case could be: permission deny, wrong listing path
 			    			     * So, set metaTask.isException is true.
 			    			     */
+			    				
 			    				activeCmdTask = wakupQueue.peek();
-					            isActiveCmds = activeCmdTask.wakeUp(reply, true);
-					            activeCmdTask.execute();
-					            activeCmdTask.getListingTask().getClient().channelstate = CHANNEL_STATE.DC_IGNORE;
+			    				if(null != activeCmdTask){
+						            isActiveCmds = activeCmdTask.wakeUp(reply, true);
+						            activeCmdTask.execute();
+						            activeCmdTask.getListingTask().getClient().channelstate = CHANNEL_STATE.DC_IGNORE;
+						            System.out.println("MetaChannel exception:" + reply + " ;Set to DC_IGNORE:" + activeCmdTask.getCmds());
+			    				}else{
+			    					System.err.println("MetaChannel exception:" + reply + " ;But task is null");
+			    				}
 			    			}
 			            } else if(Reply.isPositivePreliminary(reply)){
 			                activeCmdTask = wakupQueue.peek();
+			                System.out.println(reply);
 			                isActiveCmds = activeCmdTask.wakeUpInplace(reply, false);
 			            }
 			            else{
 				            activeCmdTask = wakupQueue.peek();
+				            if(null == activeCmdTask) break;
 				            isActiveCmds = activeCmdTask.wakeUp(reply, false);
 				            activeCmdTask.execute();
 			            }
@@ -291,7 +307,7 @@ public class MetaChannel_State extends MetaChannel{
 		        	     * channel is broken
 		        	     * loop wakupQueue, set exception flag to each task
 		        	     */
-		        	    channelTerminate(reply);
+		        	    channelTerminate(reply, new Exception("may duplicate Exception"));
 		        	}else{
 		        		if(wakupQueue.size() > 0){
 			        		activeCmdTask = wakupQueue.poll();

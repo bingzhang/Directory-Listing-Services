@@ -12,5 +12,5 @@ interface MetaChannelMonitor extends Runnable{
     boolean isTermintate();
     boolean isTobeRevived(boolean flip);
     Reply read() throws ServerException, IOException, FTPReplyParseException ;
-    void channelTerminate(Reply reply);
+    void channelTerminate(Reply reply, Exception ex);
 }
