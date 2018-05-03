@@ -48,8 +48,8 @@ public class CloudReceiver implements WaitNotifySndRecv{
     AMQP.Queue.DeclareOk ok = listen_channel.queueDeclare(CloudReceiver.listen_edge_requests_queuename, true, false, false, args);
     listen_channel.queueBind(CloudReceiver.listen_edge_requests_queuename, EdgeSender.UploadRequestTopicExchangeName, "#");
     
-	CloseableHttpAsyncClient client = HttpAsyncClients.createDefault();
-	client.start();
+    ayncclient = HttpAsyncClients.createDefault();
+    ayncclient.start();
     
     this.listen();
     
