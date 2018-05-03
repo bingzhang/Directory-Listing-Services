@@ -71,6 +71,8 @@ public class EdgeSender implements WaitNotifySndRecv{
     Map<String, Object> args = new HashMap<String, Object>();
     AMQP.Queue.DeclareOk ok = listen_channel.queueDeclare(EdgeSender.download_metadata_queuename, true, false, false, args);
     listen_channel.queueBind(EdgeSender.download_metadata_queuename, EdgeSender.DownloadMetadataTopicExchangeName, EdgeSender.bindKey);
+    //ok = upload_channel.queueDeclare(EdgeSender.UploadRequestTopicExchangeName, true, false, false, args);
+    
     this.listen();
   }
   
@@ -84,7 +86,8 @@ public class EdgeSender implements WaitNotifySndRecv{
     System.out.println("EdgeSender publish: " + data.toString());
     String msg = data.toString();
     try {
-      upload_channel.basicPublish(EdgeSender.UploadRequestTopicExchangeName, EdgeSender.bindKey, null, msg.getBytes());
+      //upload_channel.basicPublish(EdgeSender.UploadRequestTopicExchangeName, EdgeSender.bindKey, null, msg.getBytes());
+    	upload_channel.basicPublish(CloudReceiver.listen_edge_requests_queuename, EdgeSender.bindKey, null, msg.getBytes());
     } catch (IOException e) {
       e.printStackTrace();
     }

@@ -3,6 +3,10 @@ package stork.dls.stream;
 import java.net.URI;
 import java.net.URISyntaxException;
 
+import org.json.JSONObject;
+
+import com.google.gson.JsonObject;
+
 import stork.dls.client.DLSClient;
 
 
@@ -36,6 +40,20 @@ public class DLSListingTask {
     
     public void bindClient(DLSClient proxyclient){
         this.proxyclient = proxyclient;
+    }
+    
+    public String toJSONString() {
+    	JSONObject data = new JSONObject();
+    	data.put("cachekey", this.cachekey);
+    	data.put("uri", this.uri);
+    	data.put("username", this.username);
+    	data.put("serverName", this.serverName);
+    	data.put("fethchingPath", this.fethchingPath);
+    	data.put("proxy", this.proxy);
+    	data.put("forceRefresh", this.forceRefresh);
+    	data.put("enablePrefetch", this.enablePrefetch);
+    	
+    	return data.toString();
     }
 	
     public DLSListingTask(URI uri){

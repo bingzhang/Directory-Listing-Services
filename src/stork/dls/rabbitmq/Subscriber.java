@@ -53,6 +53,7 @@ public class Subscriber {
     Connection connection = factory.newConnection();
     listen_publish_channel = connection.createChannel();
     listen_publish_channel.exchangeDeclare(Publisher.PublishTopicExchangeName, "topic");
+    this.listen();
   }
   // I am not sure about whether it is thread-safe on queueBind.
   public synchronized void subscribe(String bindingKey) throws Exception{

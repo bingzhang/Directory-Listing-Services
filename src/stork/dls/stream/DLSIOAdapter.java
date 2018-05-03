@@ -8,6 +8,7 @@ import javax.annotation.concurrent.GuardedBy;
 import org.json.JSONObject;
 
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.sleepycat.je.DatabaseException;
 
 import stork.dls.client.DLSClient;
@@ -143,7 +144,7 @@ public class DLSIOAdapter {
 		  //TODO: edge send
       // pack DLSListingTask to JSONObject
       JSONObject data = new JSONObject();
-      data.put("listask", new Gson().toJson(listingtask));
+      data.put("listask", listingtask.toJSONString());
       JSONObject metadata_data = edgesnder.uploadAndwait(data);
       return metadata_data.getString("metadata");
 		} else {
