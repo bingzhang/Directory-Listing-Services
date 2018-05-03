@@ -1,12 +1,21 @@
 package stork.dls.rabbitmq;
 
 import java.io.IOException;
+import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.Future;
 
+import org.apache.http.HttpResponse;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.utils.URIBuilder;
+import org.apache.http.impl.nio.client.CloseableHttpAsyncClient;
+import org.apache.http.impl.nio.client.HttpAsyncClients;
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import stork.dls.config.DLSConfig;
 
 import com.google.gson.Gson;
 import com.rabbitmq.client.AMQP;
@@ -25,6 +34,8 @@ public class CloudReceiver implements WaitNotifySndRecv{
   Channel listen_channel = null;
   WaitNotifyQueue waitandnotify_queue = null;
   
+  CloseableHttpAsyncClient ayncclient = null;
+  
   public final static String listen_edge_requests_queuename = "listen-edge-request-queue";
   
   public CloudReceiver(String remotehost) throws Exception{
@@ -36,14 +47,30 @@ public class CloudReceiver implements WaitNotifySndRecv{
     Map<String, Object> args = new HashMap<String, Object>();
     AMQP.Queue.DeclareOk ok = listen_channel.queueDeclare(CloudReceiver.listen_edge_requests_queuename, true, false, false, args);
     listen_channel.queueBind(CloudReceiver.listen_edge_requests_queuename, EdgeSender.UploadRequestTopicExchangeName, "#");
+    
+	CloseableHttpAsyncClient client = HttpAsyncClients.createDefault();
+	client.start();
+    
     this.listen();
     
     waitandnotify_queue = new WaitNotifyQueue(this);
   }
   // sender/receiver defined func
   public void func(JSONObject data) {
-    //TODO: create a thread here to invoke DLS api to retrieve metadata
-    System.out.println("");
+    Gson gson = new Gson();
+    String URI = gson.fromJson((String)data.get("URI"), String.class);
+    boolean forceRefresh = gson.fromJson((String)data.get("forceRefresh"), boolean.class);
+    boolean enablePrefetch = gson.fromJson((String)data.get("enablePrefetch"), boolean.class);
+    try {
+	URIBuilder builder = new URIBuilder("http://"+DLSConfig.REPLICA_QUEUE_HOST+"/DirectoryListingService/rest/dls/list");
+	builder.setParameter("forceRefresh", String.valueOf(forceRefresh)).setParameter("enablePrefetch", String.valueOf(enablePrefetch))
+	.setParameter("URI", URI);
+	URI uri = builder.build();
+	HttpGet request = new HttpGet(uri);
+	ayncclient.execute(request, null);
+    } catch (Exception ex) {
+    	ex.printStackTrace();
+    }
   }
   
   // listen edge's requests
