@@ -87,7 +87,7 @@ public class EdgeSender implements WaitNotifySndRecv{
     String msg = data.toString();
     try {
       //upload_channel.basicPublish(EdgeSender.UploadRequestTopicExchangeName, EdgeSender.bindKey, null, msg.getBytes());
-    	upload_channel.basicPublish(CloudReceiver.listen_edge_requests_queuename, EdgeSender.bindKey, null, msg.getBytes());
+    	upload_channel.basicPublish(EdgeSender.UploadRequestTopicExchangeName, EdgeSender.bindKey, null, msg.getBytes());
     } catch (IOException e) {
       e.printStackTrace();
     }
