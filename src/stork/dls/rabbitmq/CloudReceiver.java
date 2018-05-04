@@ -84,7 +84,6 @@ public class CloudReceiver implements WaitNotifySndRecv{
                                  AMQP.BasicProperties properties, byte[] body) throws IOException {
         String message = new String(body, "UTF-8");
         System.out.println(" [x] Received '" + envelope.getRoutingKey() + "':'" + message + "'");
-        listen_channel.basicAck(envelope.getDeliveryTag(), true);
         
         JSONObject data = new JSONObject(message);
         Gson gson = new Gson();
@@ -92,6 +91,8 @@ public class CloudReceiver implements WaitNotifySndRecv{
         String metadata = gson.fromJson((String)data.get("path"), String.class);
 
         waitandnotify_queue.enqueue(data);
+        
+        listen_channel.basicAck(envelope.getDeliveryTag(), true);
       }
     };
     listen_channel.basicConsume(CloudReceiver.listen_edge_requests_queuename, autoAck, consumer);
