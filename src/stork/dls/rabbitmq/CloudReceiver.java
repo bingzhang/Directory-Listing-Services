@@ -88,7 +88,6 @@ public class CloudReceiver implements WaitNotifySndRecv{
         JSONObject data = new JSONObject(message);
         Gson gson = new Gson();
         String uuid = gson.fromJson((String)data.get("uuid"), String.class);
-        String metadata = gson.fromJson((String)data.get("path"), String.class);
 
         waitandnotify_queue.enqueue(data);
         
