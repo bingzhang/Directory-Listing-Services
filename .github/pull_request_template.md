@@ -27,3 +27,17 @@ _Please select a relevant option:_
 - [ ] New feature (non-breaking change which adds functionality).
 - [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected).
 - [ ] Other (any another change that does not fall in one of the above categories.)
+
+## Checklist:
+_Please select all applicable options:_
+
+[comment]: # (To select your options, please put an 'x' in the all boxes that apply.)
+
+- [ ] I have performed a self-review of my own code.
+- [ ] I have commented my code, particularly in hard-to-understand areas.
+- [ ] My change requires updating the documentation.
+- [ ] I have made necessary changes to the documentation.
+- [ ] I have added tests related to my changes.
+- [ ] My changes generate no new warnings.
+- [ ] New and existing unit tests pass locally with my changes.
+- [ ] Any dependent changes have been merged and published in downstream modules.
