@@ -5,10 +5,17 @@ import java.net.URI;
 
 import javax.annotation.concurrent.GuardedBy;
 
+import org.json.JSONObject;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.sleepycat.je.DatabaseException;
 
 import stork.dls.client.DLSClient;
+import stork.dls.config.DLSConfig;
 import stork.dls.io.local.DBCache;
+import stork.dls.rabbitmq.EdgeSender;
+import stork.dls.rabbitmq.Subscriber;
 import stork.dls.stream.DLSStream.CHANNEL_STATE;
 import stork.dls.util.DLSResult;
 
@@ -30,6 +37,8 @@ public class DLSIOAdapter {
 	private FETCH_PREFETCH doFetching = FETCH_PREFETCH.FETCH;
 	private static DBCache db_cache;
 	private boolean isNetwork = false;
+	private static Subscriber subscriber = null;
+	private static EdgeSender edgesnder = null;
 	public static DLSStreamManagement dls_Stream_management;
 	
 	public DLSIOAdapter(){
@@ -44,6 +53,8 @@ public class DLSIOAdapter {
 	 */
 	public static void INIT() throws Exception{
 		db_cache = new DBCache();
+    subscriber = new Subscriber(DLSConfig.REPLICA_QUEUE_HOST, db_cache);
+    edgesnder = new EdgeSender(DLSConfig.REPLICA_QUEUE_HOST);
 		dls_Stream_management = new DLSStreamManagement();
 	}
 	
@@ -115,15 +126,36 @@ public class DLSIOAdapter {
 		DLSStream StreamMgn = null;
 		final URI uri = listingtask.getUri();
 		final String path = listingtask.getFethchingPath();
-		
-		if (!listingtask.isForceRefresh() /*|| TTL is not OK*/) {
-			result = db_cache.Lookup(uri.getHost(), path);
-			if(!result.equals(DBCache.NoEntry)) {
-				DLSResult.preparePrefetchingList(result, dlsresult);
-				return result;
-			}
+		if(DLSConfig.DLSEDGE) {
+		  if (!listingtask.isForceRefresh() /*|| TTL is not OK*/) {
+		    result = db_cache.Lookup(uri.getHost(), path);
+		    if(!result.equals(DBCache.NoEntry)) {
+          DLSResult.preparePrefetchingList(result, dlsresult);
+          return result;
+        }
+		  }
+		  //TODO: subscribe
+	    // if this is edge DLS, subscribe the update on the lookup path 
+      try {
+        this.subscriber.subscribe(path);
+      } catch (Exception e) {
+        e.printStackTrace();
+      }
+		  //TODO: edge send
+      // pack DLSListingTask to JSONObject
+      JSONObject data = new JSONObject();
+      data.put("listask", listingtask.toJSONString());
+      JSONObject metadata_data = edgesnder.uploadAndwait(data);
+      return metadata_data.getString("metadata");
+		} else {
+  		if (!listingtask.isForceRefresh() /*|| TTL is not OK*/) {
+  			result = db_cache.Lookup(uri.getHost(), path);
+  			if(!result.equals(DBCache.NoEntry)) {
+  				DLSResult.preparePrefetchingList(result, dlsresult);
+  				return result;
+  			}
+  		}
 		}
-		
 		try{
 			final DLSProxyInfo dlsproxy = listingtask.getDlsproxy();
 			final String proxyCertContent = listingtask.getProxy();

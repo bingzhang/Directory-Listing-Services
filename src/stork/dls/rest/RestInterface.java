@@ -38,7 +38,7 @@ public class RestInterface {
     private final Boolean EnableFtpSitesRoot = new Boolean(true);
 	
 	private final static boolean enableLog = false;
-	private static MemoryCache concurrentCache;
+	public static MemoryCache concurrentCache;
 	public static String ip = "127.0.0.1";
 	public static String hostname = "localhost";
 	/**

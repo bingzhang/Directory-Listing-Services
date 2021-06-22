@@ -9,6 +9,7 @@ import stork.dls.ad.Ad;
 import stork.dls.config.DLSConfig;
 import stork.dls.inmemcache.MemoryCache;
 import stork.dls.io.local.DBCache;
+import stork.dls.rabbitmq.CloudReceiver;
 import stork.dls.rest.RestInterface;
 
 public class DLSloader implements ServletContextListener{
@@ -29,6 +30,10 @@ public class DLSloader implements ServletContextListener{
 			DLSConfig.SINGLETON = ad.getBoolean("this.SINGLETON", DLSConfig.SINGLETON);
 			DLSConfig.REPLICA_QUEUE_HOST = ad.get("replicaQueue.host", DLSConfig.REPLICA_QUEUE_HOST);
 			DLSConfig.DLSEDGE = ad.getBoolean("this.DLSEDGE", DLSConfig.DLSEDGE);
+			
+			if(!DLSConfig.DLSEDGE) {
+				CloudReceiver cloudreceiver = new CloudReceiver(DLSConfig.REPLICA_QUEUE_HOST);
+			}
 		}catch (Exception ex){
 			ex.printStackTrace();
 			System.out.println("fail to open DLS.conf ~!");

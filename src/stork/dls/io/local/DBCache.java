@@ -71,7 +71,6 @@ public class DBCache {
 	private Rabbitmq rabbitmq = null;
 	
 	private Publisher publisher = null;
-	private Subscriber subscriber = null;
 	
 	static {
 		System.out.println("bdb_path = "+BDB_PATH);
@@ -106,8 +105,6 @@ public class DBCache {
 		//rabbitmq = (DLSConfig.SINGLETON) ? null : new Rabbitmq(this);
 		if(!DLSConfig.DLSEDGE) {
 		  publisher = new Publisher(DLSConfig.REPLICA_QUEUE_HOST);
-		} else {
-		  subscriber = new Subscriber(DLSConfig.REPLICA_QUEUE_HOST, this);
 		}
 	}
 	
@@ -255,15 +252,6 @@ public class DBCache {
 			result = NoEntry;
 			e.printStackTrace();
 		}
-		// if this is edge DLS, subscribe the update on the lookup path 
-		if(DLSConfig.DLSEDGE) {
-		  try {
-        this.subscriber.subsribe(pathEntry);
-      } catch (Exception e) {
-        e.printStackTrace();
-      }
-		}
-		
 		return result;
 	}	
 	
